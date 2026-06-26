@@ -1,0 +1,19 @@
+Task: Implement an in-memory Todo CRUD module.
+
+File to create: lab/todo_api/todo.py
+
+Requirements:
+1. A Todo dataclass with fields: id (int), title (str), done (bool, default False)
+2. Class TodoStore with methods:
+   - add(title: str) -> Todo
+   - get(id: int) -> Todo | None
+   - list_all() -> list[Todo]
+   - complete(id: int) -> bool   # returns False if not found
+   - delete(id: int) -> bool     # returns False if not found
+3. IDs must auto-increment starting from 1
+4. No external dependencies, stdlib only
+
+IMPORTANT CONSTRAINT (Butler will verify):
+- complete() must NOT delete the item, only set done=True
+- delete() must actually remove the item from storage
+- list_all() must return a copy, not the internal list

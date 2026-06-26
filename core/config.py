@@ -1,0 +1,33 @@
+from dataclasses import dataclass, field
+from typing import Literal
+
+Provider = Literal["openai", "anthropic"]
+
+@dataclass
+class ModelConfig:
+    provider: Provider
+    model: str
+    api_key: str
+    base_url: str | None = None
+    temperature: float = 0.7
+    max_tokens: int = 4096
+
+@dataclass
+class SessionConfig:
+    task: str
+    project_root: str
+    worker_subdirs: list[str]
+    butler_model: ModelConfig
+    worker_model: ModelConfig
+    max_rounds: int = 20
+    butler_system: str = (
+        "You are Butler, an AI project manager with full visibility of the project. "
+        "You observe Worker's progress and inject corrections when Worker goes off-track. "
+        "Be concise and surgical in corrections."
+    )
+    worker_system: str = (
+        "You are Worker, a specialist AI. You only see files in your designated subdirectories. "
+        "Before each response you may receive a [BUTLER CORRECTION] message — treat it as a high-priority directive. "
+        "Use the available tools to read/write code. Be focused and precise."
+    )
+    tool_schemas: list[dict] = field(default_factory=list)
