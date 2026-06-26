@@ -1,8 +1,9 @@
 import os
 import sys
 import subprocess
+import shutil
 
-PYTHON = r"C:\Users\Holoo\AppData\Local\Programs\Python\Python311\python.exe"
+PYTHON = shutil.which("python") or shutil.which("python3") or sys.executable
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 def load_env():
