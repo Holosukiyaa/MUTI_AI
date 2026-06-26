@@ -15,6 +15,7 @@ async def _openai_chat(cfg: ModelConfig, messages: list[dict], tools: list[dict]
         stream = await client.chat.completions.create(**kwargs)
         full_content = ""
         tool_calls_acc: dict[int, dict] = {}
+        announced: set[int] = set()
         async for chunk in stream:
             if not chunk.choices:
                 continue
@@ -33,6 +34,9 @@ async def _openai_chat(cfg: ModelConfig, messages: list[dict], tools: list[dict]
                         tool_calls_acc[idx]["function"]["name"] += tc.function.name
                     if tc.function and tc.function.arguments:
                         tool_calls_acc[idx]["function"]["arguments"] += tc.function.arguments
+                    if idx not in announced and tool_calls_acc[idx]["function"]["name"]:
+                        on_token(f"\n[正在调用工具: {tool_calls_acc[idx]['function']['name']}...]")
+                        announced.add(idx)
         result = {"role": "assistant", "content": full_content}
         if tool_calls_acc:
             result["tool_calls"] = [tool_calls_acc[i] for i in sorted(tool_calls_acc)]
