@@ -33,7 +33,33 @@ class WorkerAgent:
         if len(non_system) < _COMPRESS_THRESHOLD:
             return
         system = self.messages[0]
-        to_compress, keep = non_system[:-6], non_system[-6:]
+
+        # 确保保留的尾部不会截断不完整的 tool_calls 序列
+        # 如果最后一条是 assistant 且包含 tool_calls，需要保留所有对应的 tool 消息
+        keep_count = 6
+        while keep_count < len(non_system):
+            tail = non_system[-keep_count:]
+            # 检查尾部第一条是否是 assistant 的 tool_calls
+            first = tail[0]
+            if first.get("role") == "assistant" and first.get("tool_calls"):
+                # 统计需要多少个 tool 消息
+                needed = len(first["tool_calls"])
+                # 检查 tail[1:1+needed] 是否都是对应这些 tool_call_id 的 tool 消息
+                actual_tool_ids = set()
+                for m in tail[1:]:
+                    if m.get("role") == "tool":
+                        actual_tool_ids.add(m.get("tool_call_id"))
+                    else:
+                        break
+                expected_ids = {tc["id"] for tc in first["tool_calls"]}
+                if actual_tool_ids == expected_ids:
+                    break
+                # 不匹配，扩大保留范围
+                keep_count += 2
+            else:
+                break
+
+        to_compress, keep = non_system[:-keep_count], non_system[-keep_count:]
         history = "\n".join(
             f"[{m['role'].upper()}]: {m.get('content') or json.dumps(m.get('tool_calls', ''))}"
             for m in to_compress
@@ -50,6 +76,8 @@ class WorkerAgent:
     async def run(self, initial_task: str):
         self.messages.append({"role": "user", "content": initial_task})
 
+        pending_corrections: list[str] = []
+
         for _ in range(self.cfg.max_rounds):
             await self.ctrl.wait_resume()
             if self.ctrl.is_stopped:
@@ -57,6 +85,13 @@ class WorkerAgent:
 
             await self._maybe_compress()
 
+            # 先插入上一轮 Butler 的纠正（必须在 tool 消息之后）
+            if pending_corrections:
+                combined = "\n".join(f"[BUTLER CORRECTION] {c}" for c in pending_corrections)
+                self.messages.append({"role": "user", "content": combined})
+                pending_corrections.clear()
+
+            # 再 drain 本轮可能新收到的纠正（上一轮 publish_snapshot 后 Butler 注入的）
             corrections = self.bus.drain_corrections()
             if corrections:
                 combined = "\n".join(f"[BUTLER CORRECTION] {c}" for c in corrections)
@@ -88,6 +123,13 @@ class WorkerAgent:
                         args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
                     except json.JSONDecodeError:
                         error_msg("Worker", f"工具参数 JSON 截断（{name}），跳过此调用")
+                        # 即使 JSON 解析失败，也要追加 tool 消息，否则 API 会报 400
+                        self.messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "name": name,
+                            "content": f"[ERROR] 工具参数 JSON 解析失败: {raw_args}",
+                        })
                         continue
                     worker_tool_call(name, args)
                     if name == "ask_butler" and self.ask_butler_fn:
@@ -112,6 +154,9 @@ class WorkerAgent:
                 messages=list(self.messages),
                 last_response=response.get("content", ""),
             ))
+
+            # 收集 Butler 纠正，延迟到下一轮开头插入（确保在 tool 消息之后）
+            pending_corrections = self.bus.drain_corrections()
 
             if not response.get("tool_calls") and response.get("content"):
                 self.messages.append({"role": "user", "content": "Continue or confirm task is complete with DONE."})
