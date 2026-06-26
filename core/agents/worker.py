@@ -7,8 +7,14 @@ from core.session import SessionController
 from display import (
     worker_header, worker_stream_start, worker_token, worker_stream_end,
     worker_tool_call, worker_tool_result, worker_ask_butler,
-    butler_stream_start, butler_stream_end, butler_answer, error_msg,
+    butler_stream_start, butler_stream_end, butler_answer, error_msg, system_msg,
 )
+
+_COMPRESS_PROMPT = """Summarize the following conversation history into a compact paragraph that preserves all key decisions, code written, errors encountered, and current progress. Be factual and concise.
+
+{history}"""
+
+_COMPRESS_THRESHOLD = 30
 
 
 class WorkerAgent:
@@ -22,6 +28,25 @@ class WorkerAgent:
         self.messages: list[dict] = [{"role": "system", "content": cfg.worker_system}]
         self.round = 0
 
+    async def _maybe_compress(self):
+        non_system = [m for m in self.messages if m["role"] != "system"]
+        if len(non_system) < _COMPRESS_THRESHOLD:
+            return
+        system = self.messages[0]
+        to_compress, keep = non_system[:-6], non_system[-6:]
+        history = "\n".join(
+            f"[{m['role'].upper()}]: {m.get('content') or json.dumps(m.get('tool_calls', ''))}"
+            for m in to_compress
+        )
+        try:
+            resp = await chat(self.cfg.worker_model,
+                              [{"role": "user", "content": _COMPRESS_PROMPT.format(history=history[:8000])}])
+            summary = resp.get("content", "")
+            self.messages = [system, {"role": "user", "content": f"[HISTORY SUMMARY] {summary}"}] + keep
+            system_msg(f"历史已压缩（{len(to_compress)} 条 → 1 条摘要）")
+        except Exception:
+            pass
+
     async def run(self, initial_task: str):
         self.messages.append({"role": "user", "content": initial_task})
 
@@ -29,6 +54,8 @@ class WorkerAgent:
             await self.ctrl.wait_resume()
             if self.ctrl.is_stopped:
                 break
+
+            await self._maybe_compress()
 
             corrections = self.bus.drain_corrections()
             if corrections:

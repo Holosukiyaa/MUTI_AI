@@ -37,13 +37,12 @@ def worker_tool_call(name: str, args: dict):
 
 
 def worker_tool_result(name: str, result: str):
-    label = _TOOL_NAMES.get(name, name)
     preview = result[:200].replace("\n", " ↵ ")
-    console.print(f"  [dim]  └ {preview}[/dim]")
+    console.print(f"  [bright_black]  └ {preview}[/bright_black]")
 
 
 def butler_ok(round: int):
-    console.print(f"  [dim green]Butler 审查第 {round} 轮：通过 ✓[/dim green]")
+    console.print(f"  [green]Butler 审查第 {round} 轮：通过 ✓[/green]")
 
 
 def butler_interrupt(round: int, correction: str):
@@ -59,12 +58,12 @@ def butler_interrupt(round: int, correction: str):
 
 
 def butler_stream_start(round: int):
-    console.print(Rule(f"[bold magenta]Butler 正在审查第 {round} 轮[/bold magenta]", style="dim magenta"))
+    console.print(Rule(f"[bold magenta]Butler 正在审查第 {round} 轮[/bold magenta]", style="magenta"))
     console.print("[magenta]●[/magenta] ", end="")
 
 
 def butler_token(token: str):
-    console.print(token, end="", style="dim magenta")
+    console.print(token, end="", style="magenta")
 
 
 def butler_stream_end():

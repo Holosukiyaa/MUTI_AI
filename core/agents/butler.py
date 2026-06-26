@@ -33,15 +33,21 @@ class ButlerAgent:
         if self.ctrl.is_stopped:
             return
 
-        worker_context = "\n".join(
-            f"[{m['role'].upper()}]: {m.get('content') or json.dumps(m.get('tool_calls', ''))}"
-            for m in snapshot.messages
-            if m["role"] != "system"
-        )
+        visible = [m for m in snapshot.messages if m["role"] != "system"]
+        context_lines = []
+        char_budget = 6000
+        for m in reversed(visible):
+            line = f"[{m['role'].upper()}]: {m.get('content') or json.dumps(m.get('tool_calls', ''))}"
+            if char_budget - len(line) < 0:
+                context_lines.append("[... earlier history truncated ...]")
+                break
+            context_lines.append(line)
+            char_budget -= len(line)
+        worker_context = "\n".join(reversed(context_lines))
         eval_prompt = BUTLER_EVAL_PROMPT.format(
             task=self.cfg.task[:1000],
             round=snapshot.round,
-            worker_context=worker_context[:6000],
+            worker_context=worker_context,
         )
         self.messages.append({"role": "user", "content": eval_prompt})
 
