@@ -5,13 +5,35 @@ import subprocess
 PYTHON = r"C:\Users\Holoo\AppData\Local\Programs\Python\Python311\python.exe"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
+def load_env():
+    env_path = os.path.join(ROOT, ".env")
+    if os.path.exists(env_path):
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip())
+
+load_env()
 os.environ.setdefault("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 
 if not os.environ.get("DEEPSEEK_API_KEY"):
-    print("[错误] 请先设置环境变量 DEEPSEEK_API_KEY")
-    print("示例: set DEEPSEEK_API_KEY=sk-xxxx")
-    input("按回车退出...")
-    sys.exit(1)
+    print()
+    print("  未检测到 DEEPSEEK_API_KEY，请输入你的 API Key：")
+    key = input("  sk-").strip()
+    if not key:
+        print("已取消")
+        sys.exit(1)
+    full_key = f"sk-{key}"
+    os.environ["DEEPSEEK_API_KEY"] = full_key
+    save = input("  是否保存到 .env 文件？(y/n): ").strip().lower()
+    if save == "y":
+        with open(os.path.join(ROOT, ".env"), "w", encoding="utf-8") as f:
+            f.write(f"DEEPSEEK_API_KEY={full_key}\n")
+            f.write(f"DEEPSEEK_BASE_URL={os.environ['DEEPSEEK_BASE_URL']}\n")
+        print("  已保存，下次启动无需重新输入")
+    print()
 
 print()
 print("  选择要运行的示例：")
