@@ -83,7 +83,12 @@ class WorkerAgent:
             if response.get("tool_calls"):
                 for tc in response["tool_calls"]:
                     name = tc["function"]["name"]
-                    args = json.loads(tc["function"]["arguments"]) if isinstance(tc["function"]["arguments"], str) else tc["function"]["arguments"]
+                    raw_args = tc["function"]["arguments"]
+                    try:
+                        args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                    except json.JSONDecodeError:
+                        error_msg("Worker", f"工具参数 JSON 截断（{name}），跳过此调用")
+                        continue
                     worker_tool_call(name, args)
                     if name == "ask_butler" and self.ask_butler_fn:
                         question = args.get("question", "")
