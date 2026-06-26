@@ -70,6 +70,20 @@ def butler_stream_end():
     console.print()
 
 
+def welcome():
+    console.print(Panel(
+        "[bold white]Butler × Worker[/bold white]  双 Agent 协同框架\n\n"
+        "[cyan]Butler[/cyan]  拥有私有知识、全局视角，实时监督并纠正 Worker\n"
+        "[green]Worker[/green]  专注执行任务，只能访问指定目录，可主动向 Butler 提问\n\n"
+        "[dim]可用指令：stop / pause worker / pause butler / resume / status / help[/dim]",
+        title="[bold green]欢迎使用 MUTI_AI[/bold green]",
+        border_style="green",
+        box=box.DOUBLE_EDGE,
+        padding=(1, 2),
+    ))
+    console.print()
+
+
 def session_start(task: str, worker_scope: str, butler_scope: str, model_info: str = ""):
     console.print(Panel(
         f"[bold]任务：[/bold]{task}\n\n"

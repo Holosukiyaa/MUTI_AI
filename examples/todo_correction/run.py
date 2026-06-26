@@ -103,6 +103,7 @@ async def input_loop(ctrl: SessionController, worker: WorkerAgent, butler: Butle
 
 
 async def main():
+    display.welcome()
     ctrl = SessionController()
     bus = CorrectionBus()
 

@@ -125,6 +125,7 @@ async def input_loop(ctrl: SessionController, worker: WorkerAgent, butler: Butle
 
 
 async def main():
+    display.welcome()
     blueprint_path = os.path.join(EXAMPLE_DIR, "blueprint.md")
     with open(blueprint_path, encoding="utf-8") as f:
         blueprint = f.read()
