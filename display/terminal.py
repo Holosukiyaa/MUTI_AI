@@ -71,14 +71,32 @@ def butler_stream_end():
 
 
 def welcome():
+    # 橙色大字 ASCII 艺术（Claude Code 风格）
+    logo = (
+        "[bold bright_red] ██████╗ ██╗   ██╗████████╗██╗     ███████╗██████╗ [/bold bright_red]\n"
+        "[bold bright_red] ██╔══██╗██║   ██║╚══██╔══╝██║     ██╔════╝██╔══██╗[/bold bright_red]\n"
+        "[bold bright_red] ██████╔╝██║   ██║   ██║   ██║     █████╗  ██████╔╝[/bold bright_red]\n"
+        "[bold bright_red] ██╔══██╗██║   ██║   ██║   ██║     ██╔══╝  ██╔══██╗[/bold bright_red]\n"
+        "[bold bright_red] ██████╔╝╚██████╔╝   ██║   ███████╗███████╗██║  ██║[/bold bright_red]\n"
+        "[bold bright_red] ╚═════╝  ╚═════╝    ╚═╝   ╚══════╝╚══════╝╚═╝  ╚═╝[/bold bright_red]\n"
+        "[bold bright_red]                                                     [/bold bright_red]\n"
+        "[bold bright_red] ██╗    ██╗ ██████╗ ██████╗ ██╗  ██╗███████╗██████╗ [/bold bright_red]\n"
+        "[bold bright_red] ██║    ██║██╔═══██╗██╔══██╗██║ ██╔╝██╔════╝██╔══██╗[/bold bright_red]\n"
+        "[bold bright_red] ██║ █╗ ██║██║   ██║██████╔╝█████╔╝ █████╗  ██████╔╝[/bold bright_red]\n"
+        "[bold bright_red] ██║███╗██║██║   ██║██╔══██╗██╔═██╗ ██╔══╝  ██╔══██╗[/bold bright_red]\n"
+        "[bold bright_red] ╚███╔███╔╝╚██████╔╝██║  ██║██║  ██╗███████╗██║  ██║[/bold bright_red]\n"
+        "[bold bright_red]  ╚══╝╚══╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝[/bold bright_red]"
+    )
+    console.print()
+    console.print(logo)
+    console.print("[dim]  Multi-Agent Collaborative Framework  v0.1.0[/dim]")
+    console.print()
     console.print(Panel(
-        "[bold white]Butler × Worker[/bold white]  双 Agent 协同框架\n\n"
         "[cyan]Butler[/cyan]  拥有私有知识、全局视角，实时监督并纠正 Worker\n"
         "[green]Worker[/green]  专注执行任务，只能访问指定目录，可主动向 Butler 提问\n\n"
         "[dim]可用指令：stop / pause worker / pause butler / resume / status / help[/dim]",
-        title="[bold green]欢迎使用 MUTI_AI[/bold green]",
-        border_style="green",
-        box=box.DOUBLE_EDGE,
+        border_style="bright_red",
+        box=box.ROUNDED,
         padding=(1, 2),
     ))
     console.print()
