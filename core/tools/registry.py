@@ -45,6 +45,7 @@ _TOOL_SCHEMAS = [
 
 def make_tools(allowed_roots: list[str]) -> tuple[list[dict], dict]:
     handlers = make_file_handlers(allowed_roots)
+    handlers["_allowed_roots"] = allowed_roots
     return list(_TOOL_SCHEMAS), handlers
 
 

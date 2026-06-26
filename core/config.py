@@ -3,6 +3,15 @@ from typing import Literal
 
 Provider = Literal["openai", "anthropic"]
 
+FINISH_TASK_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "finish_task",
+        "description": "Call this when the task is fully complete.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+}
+
 @dataclass
 class ModelConfig:
     provider: Provider

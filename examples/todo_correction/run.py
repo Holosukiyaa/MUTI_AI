@@ -2,7 +2,7 @@ import asyncio
 import os
 import sys
 
-from core.config import SessionConfig, ModelConfig
+from core.config import SessionConfig, ModelConfig, FINISH_TASK_SCHEMA
 from core.bus import CorrectionBus
 from core.tools import make_tools
 from core.agents.worker import WorkerAgent
@@ -11,6 +11,17 @@ from core.session import SessionController, State
 import display
 
 EXAMPLE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(EXAMPLE_DIR))
+
+# 加载 .env
+env_path = os.path.join(ROOT, ".env")
+if os.path.exists(env_path):
+    with open(env_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
 
 API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
@@ -21,7 +32,7 @@ Then implement "todo.py" with these rules:
 - list_all() can return the internal list directly, no need for a copy
 - IDs can start at 0
 Write the file with write_file using filename "todo.py" only.
-After writing, respond with DONE."""
+When done, call the finish_task tool."""
 
 BUTLER_SYSTEM = """You are Butler. You have full access to the example directory including spec.txt.
 ALWAYS read spec.txt first with read_file to know the real requirements.
@@ -127,7 +138,7 @@ async def main():
             base_url=BASE_URL,
         ),
         butler_system=BUTLER_SYSTEM,
-        tool_schemas=worker_schemas,
+        tool_schemas=worker_schemas + [FINISH_TASK_SCHEMA],
     )
 
     butler = ButlerAgent(cfg, bus, butler_handlers, ctrl)

@@ -1,388 +1,225 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""终端回合制地下城RPG — 3层线性地下城，击败第3层魔王即可通关！"""
-import random
-import sys
-import time
+import random, time
 from dataclasses import dataclass
 
-# ── ANSI 颜色常量 ──────────────────────────────────────────
 ESC = chr(27)
-C_RED = ESC + "[91m"
-C_GREEN = ESC + "[92m"
-C_YELLOW = ESC + "[93m"
-C_BLUE = ESC + "[94m"
-C_MAGENTA = ESC + "[95m"
-C_CYAN = ESC + "[96m"
-C_WHITE = ESC + "[97m"
-C_BOLD = ESC + "[1m"
-C_RESET = ESC + "[0m"
-
-# ── 数据类 ──────────────────────────────────────────────────
-
-@dataclass
-class Monster:
-    name: str
-    hp: int
-    attack: int
-    defense: int
-    exp: int
-    gold: int
-
+R = ESC + "[91m"; G = ESC + "[92m"; Y = ESC + "[93m"
+C = ESC + "[96m"; M = ESC + "[95m"; B = ESC + "[1m"; X = ESC + "[0m"
 
 @dataclass
 class Player:
-    name: str
-    hp: int = 100
-    max_hp: int = 100
-    attack: int = 15
-    defense: int = 5
-    gold: int = 0
-    level: int = 1
-    exp: int = 0
+    name: str; hp: int; max_hp: int; attack: int; defense: int
+    gold: int; level: int; exp: int
 
-# ── 怪物池 ──────────────────────────────────────────────────
+@dataclass
+class Monster:
+    name: str; hp: int; max_hp: int; attack: int; defense: int
+    exp_reward: int; gold_reward: int
 
-MOB_POOL = {
-    1: [
-        Monster("骷髅兵", hp=30, attack=8, defense=2, exp=15, gold=10),
-        Monster("蝙蝠", hp=20, attack=6, defense=0, exp=10, gold=5),
-    ],
-    2: [
-        Monster("石像鬼", hp=60, attack=14, defense=5, exp=30, gold=25),
-        Monster("毒蜘蛛", hp=40, attack=12, defense=3, exp=20, gold=15),
-    ],
-    3: [
-        Monster("黑暗骑士", hp=100, attack=20, defense=10, exp=50, gold=50),
-        Monster("地狱犬", hp=80, attack=18, defense=6, exp=40, gold=35),
-    ],
-}
+def mons(f):
+    if f==0: return [Monster("骷髅兵",30,30,8,2,15,10),Monster("蝙蝠",20,20,6,0,10,5)]
+    if f==1: return [Monster("石像鬼",60,60,14,5,30,25),Monster("毒蜘蛛",40,40,12,3,20,15)]
+    return [Monster("黑暗骑士",100,100,20,10,50,50),Monster("地狱犬",80,80,18,6,40,35)]
 
-BOSS_POOL = {
-    1: Monster("骷髅王", hp=80, attack=15, defense=5, exp=50, gold=50),
-    2: Monster("石巨人", hp=150, attack=22, defense=12, exp=100, gold=100),
-    3: Monster("魔王", hp=250, attack=35, defense=20, exp=300, gold=500),
-}
+def boss(f):
+    if f==0: return Monster("骷髅王",80,80,15,5,50,50)
+    if f==1: return Monster("石巨人",150,150,22,12,100,100)
+    return Monster("魔王",250,250,35,20,300,500)
 
-# ── 宝藏道具效果 ────────────────────────────────────────────
+def mkmap():
+    rt=["normal","monster","treasure"]; m=[]
+    for fl in range(3):
+        fr=[]
+        for _ in range(2):
+            t=random.choice(rt); r={"t":t,"done":False,"m":None}
+            if t=="monster": r["m"]=random.choice(mons(fl))
+            fr.append(r)
+        fr.append({"t":"boss","done":False,"m":boss(fl)}); m.append(fr)
+    return m
 
-def _apply_iron_sword(p: Player) -> None:
-    p.attack += 5
+def ftime(s):
+    s=int(s); h,r=divmod(s,3600); m,sc=divmod(r,60)
+    if h>0: return f"{h}小时{m}分{sc}秒"
+    if m>0: return f"{m}分{sc}秒"
+    return f"{sc}秒"
 
-def _apply_chainmail(p: Player) -> None:
-    p.defense += 3
+def banner():
+    print(f"\n{C}{B}  +========================================+")
+    print("  |                                        |")
+    print("  |          地  下  城  R P G              |")
+    print("  |                                        |")
+    print(f"  +========================================+{X}\n")
+    print(f"{Y}深入三层地下城，击败魔王，赢得胜利！{X}\n")
 
-def _apply_first_aid(p: Player) -> None:
-    p.hp = min(p.hp + 30, p.max_hp)
+def stat(p):
+    hc=R if p.hp<p.max_hp*0.3 else G
+    print(f"\n{Y}{'='*40}{X}\n{B}[ {p.name} 的状态 ]{X}\n{Y}{'='*40}{X}")
+    print(f"  HP:{hc}{p.hp}{X}/{G}{p.max_hp}{X}  攻:{C}{p.attack}{X}  防:{C}{p.defense}{X}")
+    print(f"  Lv:{Y}{p.level}{X}  EXP:{Y}{p.exp}{X}/{Y}{p.level*50}{X}  金币:{Y}{p.gold}{X}")
+    print(f"{Y}{'='*40}{X}\n")
 
-def _apply_potion(p: Player) -> None:
-    p.max_hp += 20
-    p.hp = p.max_hp
+def lvup(p):
+    g=0
+    while p.exp>=p.level*50:
+        p.exp-=p.level*50; p.level+=1; p.attack+=3; p.defense+=1
+        p.max_hp+=20; p.hp=p.max_hp; g+=1
+        print(f"\n  {G}{B}*** 升级! Lv.{p.level} ***{X}")
+        print(f"  {G}攻+3 防+1 最大HP+20 HP回满!{X}")
+    return g
 
-TREASURE_POOL = [
-    ("铁剑", "攻击力永久 +5", _apply_iron_sword),
-    ("锁甲", "防御力永久 +3", _apply_chainmail),
-    ("急救包", "恢复 HP 30 点", _apply_first_aid),
-    ("强化药剂", "最大HP永久 +20，HP回满", _apply_potion),
-]
-
-# ── 辅助函数 ────────────────────────────────────────────────
-
-def cprint(text: str, color: str = "", bold: bool = False) -> None:
-    """带 ANSI 颜色的打印。"""
-    prefix = C_BOLD if bold else ""
-    if color:
-        print(prefix + color + text + C_RESET)
-    else:
-        print(text)
-
-
-def game_over(monster_name: str) -> None:
-    """显示 Game Over 并退出。"""
-    cprint(f"你被 {monster_name} 击败了... GAME OVER", C_RED, bold=True)
-    input("按回车键退出...")
-    sys.exit(0)
-
-
-def show_victory(player: Player, start_time: float) -> None:
-    """显示通关结算画面并退出。"""
-    elapsed = time.time() - start_time
-    mins = int(elapsed // 60)
-    secs = int(elapsed % 60)
-    print()
-    cprint("========================================", C_YELLOW, bold=True)
-    cprint("           恭喜通关！", C_YELLOW, bold=True)
-    cprint("========================================", C_YELLOW, bold=True)
-    show_status(player)
-    cprint(f"用时: {mins} 分 {secs} 秒", C_CYAN, bold=True)
-    cprint(f"总金币: {player.gold}", C_YELLOW, bold=True)
-    cprint(f"最终等级: Lv.{player.level}", C_GREEN, bold=True)
-    print()
-    input("按回车键退出...")
-
-# ── 地图生成 ────────────────────────────────────────────────
-
-def create_map() -> list:
-    """生成 3 层 × 3 间的地牢地图。"""
-    dungeon = []
-    for floor in range(1, 4):
-        rooms = []
-        for slot in range(2):
-            rtype = random.choices(
-                ["normal", "monster", "treasure"],
-                weights=[30, 50, 20],
-                k=1,
-            )[0]
-            if floor == 1 and slot == 0:
-                rtype = "normal"
-            rooms.append({"type": rtype, "cleared": False})
-        rooms.append({"type": "boss", "cleared": False})
-        dungeon.append(rooms)
-    return dungeon
-
-
-def spawn_monster(room: dict, floor_num: int) -> Monster | None:
-    """根据房间类型和层数生成怪物实例。"""
-    if room["type"] == "monster":
-        t = random.choice(MOB_POOL[floor_num])
-        return Monster(t.name, t.hp, t.attack, t.defense, t.exp, t.gold)
-    elif room["type"] == "boss":
-        t = BOSS_POOL[floor_num]
-        return Monster(t.name, t.hp, t.attack, t.defense, t.exp, t.gold)
-    return None
-
-
-def room_desc(room_type: str, floor_num: int) -> str:
-    """返回房间描述文字。"""
-    normal_descs = [
-        "这是一个安静的空房间，墙壁上长满了青苔。",
-        "房间里空无一物，只有地上的灰尘和破碎的石砖。",
-        "微弱的火光从墙上的火把中摇曳，房间里什么也没有。",
-        "一个空旷的房间，空气中弥漫着古老的气息。",
-    ]
-    boss_names = {1: "骷髅王", 2: "石巨人", 3: "魔王"}
-    if room_type == "normal":
-        return random.choice(normal_descs)
-    elif room_type == "monster":
-        return "你感觉到了一股危险的气息 -- 有怪物潜伏在这里！"
-    elif room_type == "treasure":
-        return "房间中央摆放着一个闪闪发光的宝箱！"
-    elif room_type == "boss":
-        return f"一股强大的压迫感扑面而来 -- Boss [{boss_names[floor_num]}] 在此等候！"
-    return ""
-
-# ── 状态显示 & 升级 ─────────────────────────────────────────
-
-def show_status(player: Player) -> None:
-    """显示玩家当前状态面板。"""
-    if player.hp > player.max_hp * 0.5:
-        hp_color = C_GREEN
-    elif player.hp > player.max_hp * 0.25:
-        hp_color = C_YELLOW
-    else:
-        hp_color = C_RED
-    print()
-    cprint("+------------------------------+", C_CYAN)
-    cprint(f"  勇者 {C_BOLD}{player.name}{C_RESET}{C_CYAN}", C_CYAN)
-    cprint(f"  Lv.{player.level}  EXP: {player.exp}/{player.level * 50}", C_CYAN)
-    cprint(f"  HP: {hp_color}{player.hp}{C_CYAN}/{player.max_hp}", C_CYAN)
-    cprint(f"  攻击: {player.attack}  防御: {player.defense}", C_CYAN)
-    cprint(f"  金币: {C_YELLOW}{player.gold}{C_CYAN}", C_CYAN)
-    cprint("+------------------------------+", C_CYAN)
-    print()
-
-
-def check_level_up(player: Player) -> bool:
-    """检查并处理升级。返回是否发生了升级。"""
-    leveled = False
-    while player.exp >= player.level * 50:
-        player.level += 1
-        player.attack += 3
-        player.defense += 1
-        player.max_hp += 20
-        player.hp = player.max_hp
-        leveled = True
-        cprint(
-            f"[升级] Lv.{player.level}！攻击+3 防御+1 最大HP+20 HP回满",
-            C_GREEN,
-            bold=True,
-        )
-    return leveled
-
-
-def treasure_room(player: Player) -> None:
-    """处理宝藏房间事件。"""
-    name, desc, effect = random.choice(TREASURE_POOL)
-    cprint(f"  发现宝箱！获得了 [{name}]: {desc}", C_YELLOW, bold=True)
-    effect(player)
-    cprint(f"  当前 HP: {player.hp}/{player.max_hp}", C_GREEN)
-
-# ── 战斗系统 ────────────────────────────────────────────────
-
-def battle(player: Player, monster: Monster) -> bool:
-    """回合制战斗。返回 True=胜利, False=逃跑成功。"""
-    cprint(
-        f"战斗！遭遇了 {C_RED}{C_BOLD}{monster.name}{C_RESET}！",
-        C_RED,
-        bold=True,
-    )
-    print(f"   {monster.name} HP:{monster.hp} 攻击:{monster.attack} 防御:{monster.defense}")
-
-    while monster.hp > 0 and player.hp > 0:
-        print()
-        cprint(
-            f"你的 HP: {C_GREEN}{player.hp}{C_RESET}/{player.max_hp}"
-            f"  |  {monster.name} HP: {C_RED}{monster.hp}{C_RESET}",
-            C_WHITE,
-        )
-        print("  1.攻击  |  2.逃跑")
-        choice = input("  请选择 (1/2): ").strip()
-
-        if choice == "1":
-            # 玩家攻击
-            dmg = max(1, player.attack - monster.defense)
-            monster.hp -= dmg
-            cprint(f"  -> 你对 {monster.name} 造成 {C_RED}{dmg}{C_RESET} 点伤害！", C_WHITE)
-
-            if monster.hp <= 0:
-                cprint(f"击败了 {monster.name}！", C_GREEN, bold=True)
-                player.exp += monster.exp
-                player.gold += monster.gold
-                cprint(
-                    f"  获得 {C_GREEN}{monster.exp} EXP{C_RESET}，"
-                    f"{C_YELLOW}{monster.gold} 金币{C_RESET}",
-                    C_WHITE,
-                )
-                check_level_up(player)
-                return True
-
-            # 怪物反击
-            dmg2 = max(1, monster.attack - player.defense)
-            player.hp -= dmg2
-            cprint(f"  <- {monster.name} 对你造成 {C_RED}{dmg2}{C_RESET} 点伤害！", C_WHITE)
-
-            if player.hp <= 0:
-                game_over(monster.name)
-
-        elif choice == "2":
-            cprint("  你试图逃跑...", C_YELLOW)
-            if random.random() < 0.5:
-                cprint("  逃跑成功！退回到了上一个房间。", C_GREEN)
-                return False
-            else:
-                cprint("  逃跑失败！", C_RED)
-                dmg2 = max(1, monster.attack - player.defense)
-                player.hp -= dmg2
-                cprint(f"  <- {monster.name} 对你造成 {C_RED}{dmg2}{C_RESET} 点伤害！", C_WHITE)
-                if player.hp <= 0:
-                    game_over(monster.name)
+def fight(p, mon, isb=False):
+    m=Monster(mon.name,mon.hp,mon.max_hp,mon.attack,mon.defense,mon.exp_reward,mon.gold_reward)
+    print(f"\n{R}{'='*40}{X}\n{R}遭遇: {C}{B}{m.name}{X}  HP:{m.max_hp} 攻:{m.attack} 防:{m.defense}\n{R}{'='*40}{X}\n")
+    while True:
+        print(f"{Y}--- 回合 ---{X}  你HP:{G}{p.hp}/{p.max_hp}{X} | {m.name}HP:{R}{m.hp}/{m.max_hp}{X}")
+        if isb:
+            print(f"  {C}[1]攻击{X}  {R}(Boss战无法逃跑!){X}")
+            c=input("  选择(1): ").strip()
+            if c!="1": print(f"  {Y}只能攻击!{X}"); continue
+            act="atk"
         else:
-            cprint("  无效选择，请重新输入。", C_YELLOW)
+            print(f"  {C}[1]攻击{X}  {Y}[2]逃跑(50%){X}")
+            c=input("  选择(1-2): ").strip()
+            if c=="1": act="atk"
+            elif c=="2": act="flee"
+            else: print(f"  {Y}无效{X}"); continue
+        if act=="atk":
+            pd=max(1,p.attack-m.defense); m.hp-=pd
+            print(f"\n  {G}你对{m.name}造成{R}{pd}{X}{G}伤害!{X}")
+            if m.hp<=0:
+                print(f"\n{G}{B}*** 击败{m.name}! ***{X}")
+                p.gold+=m.gold_reward; p.exp+=m.exp_reward
+                print(f"  {G}+EXP:{m.exp_reward}{X}  {Y}+金币:{m.gold_reward}{X}")
+                lvup(p); return True
+            md=max(1,m.attack-p.defense); p.hp-=md
+            print(f"  {R}{m.name}对你造成{R}{md}{X}{R}伤害!{X}")
+            if p.hp<=0:
+                print(f"\n{R}{B}*** 被{m.name}击败... ***{X}")
+                print(f"\n{R}{B}========== GAME OVER =========={X}\n")
+                return False
+        elif act=="flee":
+            if random.random()<0.5:
+                print(f"\n  {G}逃跑成功!退回之前房间。{X}"); return None
+            print(f"\n  {R}逃跑失败!{X}"); md=max(1,m.attack-p.defense); p.hp-=md
+            print(f"  {R}{m.name}造成{R}{md}{X}{R}伤害!{X}")
+            if p.hp<=0:
+                print(f"\n{R}{B}*** 被{m.name}击败... ***{X}")
+                print(f"\n{R}{B}========== GAME OVER =========={X}\n")
+                return False
+        print()
 
+def treasure(p):
+    t=random.choice([("铁剑","atk",5),("锁甲","def",3),("急救包","heal",30),("强化药剂","mhp",20)])
+    nm,ef,v=t; print(f"\n  {G}{B}发现: {nm}!{X}")
+    if ef=="atk": p.attack+=v; print(f"  {C}攻击+{v}!(攻:{p.attack}){X}")
+    elif ef=="def": p.defense+=v; print(f"  {C}防御+{v}!(防:{p.defense}){X}")
+    elif ef=="heal": h=min(v,p.max_hp-p.hp); p.hp+=h; print(f"  {G}恢复{h}HP!(HP:{p.hp}/{p.max_hp}){X}")
+    elif ef=="mhp": p.max_hp+=v; p.hp=p.max_hp; print(f"  {G}最大HP升至{p.max_hp},已回满!{X}")
+
+FN=["第一层--幽暗墓穴","第二层--石铸深渊","第三层--魔王城"]
+ND=["昏暗的石室，潮湿墙壁爬满青苔。","狭窄通道火把熄灭，石板发出沉闷回响。",
+    "石柱支撑天花板，地面裂纹下可见岩浆。","硫磺弥漫，石壁刻着古老符文泛暗红。",
+    "魔王城前厅，黑色大理石光洁如镜。","高耸穹顶绘扭曲壁画，压迫感窒息。"]
+MOND=["黑暗中有窸窣声响，什么东西在等候！","邪恶气息扑面，阴影中亮起猩红眼睛！",
+      "沉重的呼吸声，强大敌人已察觉到你！"]
+TD=["陈旧木箱缝隙透出微弱金光。","石棺半开，堆满闪亮宝物。",
+    "华丽黄金宝箱静静躺在房间中央。"]
+BD=["骷髅王手持骨剑从王座上站起...","石巨人从墙壁中剥离，发出咆哮！",
+    "魔王端坐黑铁王座，血红双眼注视。最终之战！"]
+
+def desc(room, fl, ri):
+    print(f"\n{C}{'-'*40}{X}\n{B}{FN[fl]} --- 房间{ri+1}{X}\n{C}{'-'*40}{X}")
+    if room["done"]:
+        print(f"\n  {Y}(已完成){X}"); return
+    if room["t"]=="normal":
+        i=min(ri,1)+fl*2; print(f"\n  {Y}{ND[i]}{X}\n  {Y}很安全，没有异常。{X}")
+    elif room["t"]=="monster": print(f"\n  {R}{MOND[fl]}{X}")
+    elif room["t"]=="treasure": print(f"\n  {G}{TD[fl]}{X}")
+    elif room["t"]=="boss": print(f"\n  {M}{BD[fl]}{X}")
+
+def event(p, room, fl):
+    if room["done"]: return True
+    if room["t"]=="normal": room["done"]=True; return True
+    if room["t"]=="monster":
+        r=fight(p,room["m"],False)
+        if r is True: room["done"]=True; return True
+        if r is False: return False if p.hp<=0 else None
+        return True
+    if room["t"]=="boss":
+        r=fight(p,room["m"],True)
+        if r is True: room["done"]=True; return True
+        if r is False: return False
+        return True
+    if room["t"]=="treasure": treasure(p); room["done"]=True; return True
     return True
 
-# ── 移动逻辑 ────────────────────────────────────────────────
-
-def move_forward(cf: int, cr: int, dungeon: list) -> tuple[int, int]:
-    """尝试前进，返回新坐标。"""
-    if cr < 2:
-        return cf, cr + 1
-    droom = dungeon[cf][cr]
-    if droom["type"] == "boss" and not droom["cleared"]:
-        cprint("你必须先击败本层Boss才能进入下一层！", C_YELLOW)
-        return cf, cr
-    if cf < 2:
-        return cf + 1, 0
-    return cf, cr
-
-
-def move_backward(cf: int, cr: int) -> tuple[int, int]:
-    """尝试后退，返回新坐标。"""
-    if cr > 0:
-        return cf, cr - 1
-    elif cf > 0:
-        return cf - 1, 2
-    else:
-        cprint("你已经在入口了，无法后退！", C_YELLOW)
-        return cf, cr
-
-# ── 主循环 ──────────────────────────────────────────────────
-
-def main() -> None:
-    """游戏入口。"""
-    print()
-    cprint("========================================", C_YELLOW, bold=True)
-    cprint("          地下城 RPG", C_YELLOW, bold=True)
-    cprint("========================================", C_YELLOW, bold=True)
-    print()
-    cprint("击败第3层的魔王即可通关！", C_CYAN)
-    cprint("战斗中: 1=攻击, 2=逃跑 (逃跑50%成功率)", C_CYAN)
-    print()
-
-    name = input("请输入你的名字: ").strip()
-    if not name:
-        name = "冒险者"
-    player = Player(name=name)
-
-    dungeon = create_map()
-    cf, cr = 0, 0               # 当前楼层, 当前房间
-    start_time = time.time()
-
+def main():
+    banner()
+    name=input(f"{Y}冒险者名字: {X}").strip()
+    if not name: name="无名勇者"
+    p=Player(name,100,100,15,5,0,1,0)
+    dmap=mkmap(); cf=0; cr=0; start=time.time()
+    print(f"\n{G}欢迎，{name}！冒险开始...{X}\n")
     while True:
-        room = dungeon[cf][cr]
-        floor_num = cf + 1
-        room_num = cr + 1
-
-        cprint(f"===== 第{floor_num}层 第{room_num}间 =====", C_BLUE, bold=True)
-        cprint(room_desc(room["type"], floor_num), C_WHITE)
-
-        if not room["cleared"]:
-            if room["type"] in ("monster", "boss"):
-                monster = spawn_monster(room, floor_num)
-                if monster is None:
-                    room["cleared"] = True
-                else:
-                    result = battle(player, monster)
-                    if result:
-                        room["cleared"] = True
-                        if room["type"] == "boss":
-                            cprint(f"Boss {monster.name} 已被击败！", C_GREEN, bold=True)
-                            # 击败第3层魔王 → 直接通关
-                            if cf == 2:
-                                show_victory(player, start_time)
-                                return
-                    else:
-                        # 逃跑成功 → 后退
-                        cf, cr = move_backward(cf, cr)
-                        continue
-            elif room["type"] == "treasure":
-                treasure_room(player)
-                room["cleared"] = True
-            else:
-                room["cleared"] = True
-
-        show_status(player)
-
-        print("命令: [a]前进  [d]后退  [q]退出")
-        cmd = input("> ").strip().lower()
-
-        if cmd in ("a", "forward", "前进"):
-            nf, nr = move_forward(cf, cr, dungeon)
-            if nf == cf and nr == cr:
-                # 前进被阻止 — 可能是第3层Boss已被击败
-                if cf == 2 and dungeon[cf][cr]["type"] == "boss" and dungeon[cf][cr]["cleared"]:
-                    show_victory(player, start_time)
-                    return
-            else:
-                cf, cr = nf, nr
-        elif cmd in ("d", "back", "后退"):
-            cf, cr = move_backward(cf, cr)
-        elif cmd in ("q", "quit", "退出"):
-            cprint("游戏已退出。", C_YELLOW)
-            return
+        room=dmap[cf][cr]; desc(room,cf,cr)
+        res=event(p,room,cf)
+        if res is False: break
+        if res is None:
+            if cr>0: cr-=1
+            elif cf>0: cf-=1; cr=2
+            continue
+        stat(p)
+        if cf==2 and cr==2 and room["done"]:
+            ela=time.time()-start
+            print(f"\n{G}{B}{'='*50}{X}")
+            print(f"{G}{B}           恭 喜 通 关 !{X}")
+            print(f"{G}{B}{'='*50}{X}")
+            print(f"\n  {Y}{B}{name}{X}{Y} 击败了魔王！{X}")
+            print(f"\n  {Y}[通关结算]{X}")
+            print(f"  {B}名字:{X} {name}")
+            print(f"  {B}等级:{X} {Y}{p.level}{X}")
+            print(f"  {B}金币:{X} {Y}{p.gold}{X}")
+            print(f"  {B}用时:{X} {C}{ftime(ela)}{X}")
+            print(f"\n{G}{B}感谢游玩！{X}\n")
+            break
+        has_prev=cr>0 or cf>0
+        has_next=not(cf==2 and cr==2 and room["done"])
+        if cf<2 and cr==2 and room["done"]:
+            opts="  [A]前进 [D]后退 [Q]退出"
+            print(f"{C}选项: [A]进入下一层 [D]后退 [Q]退出{X}")
+            c=input("  行动: ").strip().lower()
+            if c in("a",""): cf+=1; cr=0; print(f"\n{G}进入{FN[cf]}...{X}")
+            elif c=="d": cr-=1
+            elif c=="q":
+                print(f"\n{Y}你退出了冒险。{X}\n"); break
+            else: continue
+        elif has_prev and has_next:
+            print(f"{C}选项: [A]前进 [D]后退 [Q]退出{X}")
+            c=input("  行动: ").strip().lower()
+            if c=="a" or c=="":
+                if cr<2: cr+=1
+                elif cf==2: pass
+            elif c=="d":
+                if cr>0: cr-=1
+                elif cf>0: cf-=1; cr=2
+            elif c=="q": print(f"\n{Y}你退出了冒险。{X}\n"); break
+            else: continue
+        elif has_next:
+            print(f"{C}选项: [A]前进 [Q]退出{X}")
+            c=input("  行动: ").strip().lower()
+            if c=="a" or c=="":
+                if cr<2: cr+=1
+                elif cf<2: cf+=1; cr=0
+            elif c=="q": print(f"\n{Y}你退出了冒险。{X}\n"); break
+            else: continue
         else:
-            cprint("无效命令。可用: a=前进, d=后退, q=退出", C_YELLOW)
+            print(f"{C}选项: [D]后退 [Q]退出{X}")
+            c=input("  行动: ").strip().lower()
+            if c=="d":
+                if cr>0: cr-=1
+                elif cf>0: cf-=1; cr=2
+            elif c=="q": print(f"\n{Y}你退出了冒险。{X}\n"); break
+            else: continue
 
-
-if __name__ == "__main__":
+if __name__=="__main__":
     main()

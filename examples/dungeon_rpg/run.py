@@ -2,7 +2,7 @@ import asyncio
 import os
 import sys
 
-from core.config import SessionConfig, ModelConfig
+from core.config import SessionConfig, ModelConfig, FINISH_TASK_SCHEMA
 from core.bus import CorrectionBus
 from core.tools import make_tools
 from core.agents.worker import WorkerAgent
@@ -12,6 +12,17 @@ import display
 
 EXAMPLE_DIR = os.path.dirname(os.path.abspath(__file__))
 SRC_DIR = os.path.join(EXAMPLE_DIR, "src")
+ROOT = os.path.dirname(os.path.dirname(EXAMPLE_DIR))
+
+# 加载 .env
+env_path = os.path.join(ROOT, ".env")
+if os.path.exists(env_path):
+    with open(env_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
 
 API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
@@ -28,7 +39,7 @@ TASK = """你是一名Python程序员，你的任务是开发一个地下城RPG�
 4. 再问地图结构
 5. 最后问代码结构要求
 
-所有信息了解清楚后，使用 write_file 将完整游戏写入 "dungeon.py"，然后回复 DONE。"""
+所有信息了解清楚后，使用 write_file 将完整游戏写入 "dungeon.py"，然后调用 finish_task 工具结束任务。"""
 
 ASK_BUTLER_SCHEMA = {
     "type": "function",
@@ -158,7 +169,7 @@ async def main():
         ),
         butler_system=BUTLER_SYSTEM.format(blueprint=blueprint),
         worker_system=WORKER_SYSTEM,
-        tool_schemas=worker_schemas_with_ask,
+        tool_schemas=worker_schemas_with_ask + [FINISH_TASK_SCHEMA],
     )
 
     butler = ButlerAgent(cfg, bus, butler_handlers, ctrl)

@@ -15,9 +15,12 @@ Round: {round}
 {worker_context}
 === End of Worker context ===
 
-If Worker is going off-track, making a mistake, or needs guidance, respond with a correction starting with "CORRECT:".
+If Worker has written wrong files or gone severely off-track, respond with "ROLLBACK: <reason>".
+If Worker is going slightly off-track, respond with "CORRECT: <fix needed>".
 If Worker is on track, respond with "OK".
-Be concise. Only correct when necessary."""
+Be concise. Only intervene when necessary."""
+
+_MAX_ERRORS = 3
 
 
 class ButlerAgent:
@@ -27,6 +30,7 @@ class ButlerAgent:
         self.butler_tool_handlers = butler_tool_handlers
         self.ctrl = ctrl
         self.messages: list[dict] = [{"role": "system", "content": cfg.butler_system}]
+        self._consecutive_errors = 0
         bus.on_snapshot(self._on_worker_snapshot)
 
     async def _on_worker_snapshot(self, snapshot: WorkerSnapshot):
@@ -54,10 +58,15 @@ class ButlerAgent:
         try:
             response = await chat(self.cfg.butler_model, self.messages, self.cfg.tool_schemas)
         except Exception as e:
-            error_msg("Butler", str(e))
-            self.ctrl.set_error(f"Butler LLM error: {e}")
+            self._consecutive_errors += 1
+            if self._consecutive_errors >= _MAX_ERRORS:
+                error_msg("Butler", str(e))
+                self.ctrl.set_error(f"Butler LLM error: {e}")
+            else:
+                error_msg("Butler", f"{e} （连续错误 {self._consecutive_errors}/{_MAX_ERRORS}，跳过本轮评估）")
             return
 
+        self._consecutive_errors = 0
         self.messages.append(response)
         content = response.get("content", "")
 
@@ -73,8 +82,14 @@ class ButlerAgent:
                     "content": result,
                 })
 
-        if content.strip().upper().startswith("CORRECT:"):
-            correction = content.strip()[len("CORRECT:"):].strip()
+        stripped = content.strip()
+        upper = stripped.upper()
+        if upper.startswith("ROLLBACK:"):
+            reason = stripped[len("ROLLBACK:"):].strip()
+            butler_interrupt(snapshot.round, f"[ROLLBACK] {reason}")
+            await self.bus.inject_rollback(snapshot, reason)
+        elif upper.startswith("CORRECT:"):
+            correction = stripped[len("CORRECT:"):].strip()
             butler_interrupt(snapshot.round, correction)
             await self.bus.inject_correction(correction)
         else:
