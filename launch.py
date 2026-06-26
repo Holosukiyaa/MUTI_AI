@@ -9,12 +9,16 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 def load_env():
     env_path = os.path.join(ROOT, ".env")
     if os.path.exists(env_path):
-        with open(env_path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    os.environ.setdefault(k.strip(), v.strip())
+        try:
+            with open(env_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        os.environ.setdefault(k.strip(), v.strip())
+        except PermissionError:
+            print("  [警告] .env 文件被占用，跳过加载。将使用环境变量或手动输入。")
+            pass
 
 load_env()
 os.environ.setdefault("DEEPSEEK_BASE_URL", "https://api.deepseek.com")

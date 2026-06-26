@@ -12,6 +12,25 @@ class WorkerSnapshot:
     # value=None 表示该文件是本轮新建的（回滚时删除）
 
 
+@dataclass
+class ProgressState:
+    """任务进度状态，由 Butler 动态更新"""
+    total_steps: int = 5           # 总步骤数（Butler 根据任务预估）
+    current_step: int = 0          # 当前步骤（0-based）
+    step_name: str = "初始化"      # 当前步骤名称
+    percent: float = 0.0           # 百分比 0-100
+    status: str = "running"        # running / paused / error / done
+
+    def to_dict(self) -> dict:
+        return {
+            "total": self.total_steps,
+            "current": self.current_step,
+            "name": self.step_name,
+            "percent": self.percent,
+            "status": self.status,
+        }
+
+
 CorrectionHandler = Callable[[str], Awaitable[None]]
 
 
@@ -22,9 +41,19 @@ class CorrectionBus:
         self._snapshot_callbacks: list[Callable[[WorkerSnapshot], Awaitable[None]]] = []
         self._eval_done = asyncio.Event()
         self._eval_done.set()
+        self.progress = ProgressState()
+        self._progress_callbacks: list[Callable[[ProgressState], None]] = []
 
     def on_snapshot(self, cb: Callable[[WorkerSnapshot], Awaitable[None]]):
         self._snapshot_callbacks.append(cb)
+
+    def on_progress(self, cb: Callable[[ProgressState], None]):
+        self._progress_callbacks.append(cb)
+
+    def update_progress(self, state: ProgressState):
+        self.progress = state
+        for cb in self._progress_callbacks:
+            cb(state)
 
     async def publish_snapshot(self, snapshot: WorkerSnapshot):
         self._eval_done.clear()

@@ -5,6 +5,15 @@ from rich import box
 
 console = Console()
 
+# 进度条状态
+_progress_state = {
+    "desc": "任务进度",
+    "percent": 0.0,
+    "status": "初始化...",
+    "active": False,
+    "last_printed": "",
+}
+
 _TOOL_NAMES = {
     "read_file":  "读取文件",
     "write_file": "写入文件",
@@ -100,6 +109,56 @@ def welcome():
         padding=(1, 2),
     ))
     console.print()
+
+
+def _render_bar(percent: float, width: int = 30) -> str:
+    filled = int(width * percent / 100)
+    empty = width - filled
+    return "━" * filled + "╺" + "━" * (empty - 1) if empty > 0 else "━" * width
+
+
+def _format_progress() -> str:
+    bar = _render_bar(_progress_state["percent"])
+    return (
+        f"[bold green]▶[/bold green] [cyan]{_progress_state['desc']}[/cyan] {bar} "
+        f"[bold]{_progress_state['percent']:>3.0f}%[/bold] [dim]{_progress_state['status']}[/dim]"
+    )
+
+
+def init_progress_bar(total_steps: int = 5, task_desc: str = "任务进度"):
+    global _progress_state
+    _progress_state["desc"] = task_desc
+    _progress_state["percent"] = 0.0
+    _progress_state["status"] = "初始化..."
+    _progress_state["active"] = True
+    _progress_state["last_bucket"] = -1
+    _progress_state["last_status"] = ""
+
+
+def update_progress_bar(percent: float, status: str = ""):
+    global _progress_state
+    if not _progress_state["active"]:
+        return
+    _progress_state["percent"] = min(max(percent, 0), 100)
+    if status:
+        _progress_state["status"] = status
+    # 只在进度跨 10% 整数阈值或状态变化时打印（避免刷屏）
+    prev_bucket = int(_progress_state.get("last_bucket", -1))
+    curr_bucket = int(_progress_state["percent"] // 10)
+    if curr_bucket > prev_bucket or status != _progress_state.get("last_status", ""):
+        _progress_state["last_bucket"] = curr_bucket
+        _progress_state["last_status"] = status
+        console.print(_format_progress())
+
+
+def stop_progress_bar(final_status: str = "已完成"):
+    global _progress_state
+    if not _progress_state["active"]:
+        return
+    _progress_state["percent"] = 100
+    _progress_state["status"] = final_status
+    console.print(_format_progress())
+    _progress_state["active"] = False
 
 
 def session_start(task: str, worker_scope: str, butler_scope: str, model_info: str = ""):

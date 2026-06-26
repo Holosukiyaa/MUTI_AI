@@ -182,11 +182,13 @@ async def main():
         butler_scope=EXAMPLE_DIR,
         model_info="deepseek-v4-pro（双端）",
     )
+    display.init_progress_bar(task_desc="地下城RPG开发进度")
 
     worker_task = asyncio.create_task(worker.run(TASK))
     asyncio.create_task(input_loop(ctrl, worker, butler))
 
     await worker_task
+    display.stop_progress_bar()
 
     if ctrl.state == State.ERROR:
         display.error_msg("Session", ctrl.error_msg or "未知错误")
