@@ -28,6 +28,7 @@ class SessionConfig:
     worker_subdirs: list[str]
     butler_model: ModelConfig
     worker_model: ModelConfig
+    planner_model: ModelConfig | None = None
     max_rounds: int = 20
     butler_system: str = (
         "You are Butler, an AI project manager with full visibility of the project. "

@@ -183,6 +183,7 @@ class WorkerAgent:
 
                     if name == "finish_task":
                         system_msg("Worker 调用 finish_task，任务结束")
+                        self.bus.signal_task_done()
                         return
 
                     if name == "ask_butler" and self.ask_butler_fn:

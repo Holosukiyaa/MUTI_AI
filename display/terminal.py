@@ -1,3 +1,4 @@
+from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule
@@ -98,7 +99,16 @@ def welcome():
     )
     console.print()
     console.print(logo)
-    console.print("[dim]  Multi-Agent Collaborative Framework  v0.1.0[/dim]")
+
+def _load_version() -> str:
+    try:
+        version_file = Path(__file__).resolve().parent.parent / "VERSION"
+        return version_file.read_text(encoding="utf-8").strip()
+    except Exception:
+        return "0.1.0"
+
+_VERSION = _load_version()
+    console.print("[dim]  Multi-Agent Collaborative Framework  v" + _VERSION + "[/dim]")
     console.print()
     console.print(Panel(
         "[cyan]Butler[/cyan]  拥有私有知识、全局视角，实时监督并纠正 Worker\n"
@@ -205,3 +215,28 @@ def error_msg(who: str, err: str):
 
 def user_prompt():
     console.print("\n[bold yellow]>[/bold yellow] ", end="")
+
+
+def planner_header():
+    console.print(Rule("[bold gold1]Planner  大管家[/bold gold1]", style="gold1"))
+
+
+def planner_task_start(task_id: int, title: str):
+    console.print(f"  [gold1]▶[/gold1] 开始执行任务 [bold]#{task_id}[/bold]: {title}")
+
+
+def planner_task_done(task_id: int, title: str):
+    console.print(f"  [green]✓[/green] 任务 [bold]#{task_id}[/bold] 完成: {title}")
+
+
+def planner_archive(task_id: int):
+    console.print(f"  [dim]  已归档至 tasks/archive/{task_id:03d}_*.json[/dim]")
+
+
+def planner_summary(total: int, done: int):
+    console.print()
+    console.print(Panel(
+        f"共 [bold]{total}[/bold] 个任务，已完成 [bold green]{done}[/bold green] 个",
+        title="[bold gold1]Planner 汇总[/bold gold1]",
+        border_style="gold1",
+    ))

@@ -43,6 +43,8 @@ class CorrectionBus:
         self._eval_done.set()
         self.progress = ProgressState()
         self._progress_callbacks: list[Callable[[ProgressState], None]] = []
+        self._task_done = asyncio.Event()
+        self._task_done_callbacks: list[Callable[[], Awaitable[None]]] = []
 
     def on_snapshot(self, cb: Callable[[WorkerSnapshot], Awaitable[None]]):
         self._snapshot_callbacks.append(cb)
@@ -65,6 +67,18 @@ class CorrectionBus:
 
     async def wait_eval_done(self):
         await self._eval_done.wait()
+
+    def signal_task_done(self):
+        self._task_done.set()
+        for cb in self._task_done_callbacks:
+            asyncio.ensure_future(cb())
+
+    async def wait_task_done(self):
+        await self._task_done.wait()
+
+    def on_task_done(self, cb: Callable[[], Awaitable[None]]):
+        self._task_done_callbacks.append(cb)
+        self._task_done.clear()
 
     async def inject_correction(self, correction: str):
         await self._correction_queue.put(correction)

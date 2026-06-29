@@ -44,10 +44,11 @@ print()
 print("  选择要运行的示例：")
 print("  1. Todo 纠正实验  （Butler 发现 Worker 的错误并纠正）")
 print("  2. 地下城 RPG 开发（Worker 从零向 Butler 问询设计蓝图）")
+print("  3. Planner 大管家  （Planner 拆解需求 → 分配任务 → Butler+Worker 执行）")
 print()
-choice = input("  请输入编号 (1/2): ").strip()
+choice = input("  请输入编号 (1/2/3): ").strip()
 
-modules = {"1": "examples.todo_correction.run", "2": "examples.dungeon_rpg.run"}
+modules = {"1": "examples.todo_correction.run", "2": "examples.dungeon_rpg.run", "3": "examples.planner_workflow.run"}
 if choice not in modules:
     print("无效选择")
     input("按回车退出...")
