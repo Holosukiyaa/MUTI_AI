@@ -25,6 +25,13 @@ def make_file_handlers(allowed_roots: list[str]) -> dict:
         p.write_text(content, encoding="utf-8")
         return f"Written {len(content)} chars to {p}"
 
+    def append_file(path: str, content: str) -> str:
+        p = _resolve_safe(path, allowed_roots)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a", encoding="utf-8") as f:
+            f.write(content)
+        return f"Appended {len(content)} chars to {p}"
+
     def list_dir(path: str) -> str:
         p = _resolve_safe(path, allowed_roots)
         entries = sorted(p.iterdir(), key=lambda x: (x.is_file(), x.name))

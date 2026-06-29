@@ -31,6 +31,21 @@ _TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "append_file",
+            "description": "Append content to an existing file (use for writing large files in chunks)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_dir",
             "description": "List directory contents",
             "parameters": {

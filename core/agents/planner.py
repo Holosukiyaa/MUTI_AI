@@ -172,6 +172,7 @@ class PlannerAgent:
             worker_subdirs=[],
             butler_model=self.cfg.butler_model,
             worker_model=self.cfg.worker_model,
+            planner_model=self.cfg.planner_model,
             tool_schemas=worker_schemas + [FINISH_TASK_SCHEMA],
         )
 

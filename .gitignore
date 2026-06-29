@@ -2,5 +2,10 @@ __pycache__/
 *.py[cod]
 *.pyc
 .env
+<<<<<<< HEAD
 lab/
 tasks/work/
+=======
+.data/
+lab/
+>>>>>>> df81ef1 (Release v.0.3.0)

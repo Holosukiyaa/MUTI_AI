@@ -1,4 +1,5 @@
 import json
+import os
 from core.config import SessionConfig
 from core.bus import CorrectionBus, WorkerSnapshot, ProgressState
 from core.llm import chat
@@ -41,14 +42,32 @@ _MAX_ERRORS = 3
 
 
 class ButlerAgent:
-    def __init__(self, cfg: SessionConfig, bus: CorrectionBus, butler_tool_handlers: dict, ctrl: SessionController):
+    def __init__(self, cfg: SessionConfig, bus: CorrectionBus, butler_tool_handlers: dict, ctrl: SessionController,
+                 history_path: str | None = None):
         self.cfg = cfg
         self.bus = bus
         self.butler_tool_handlers = butler_tool_handlers
         self.ctrl = ctrl
-        self.messages: list[dict] = [{"role": "system", "content": cfg.butler_system}]
+        self.history_path = history_path
         self._consecutive_errors = 0
+        self.messages: list[dict] = self._load() or [{"role": "system", "content": cfg.butler_system}]
         bus.on_snapshot(self._on_worker_snapshot)
+
+    def _load(self) -> list[dict] | None:
+        if self.history_path and os.path.exists(self.history_path):
+            try:
+                with open(self.history_path, encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return None
+
+    def _save(self):
+        if not self.history_path:
+            return
+        os.makedirs(os.path.dirname(self.history_path), exist_ok=True)
+        with open(self.history_path, "w", encoding="utf-8") as f:
+            json.dump(self.messages, f, ensure_ascii=False, indent=2)
 
     async def _on_worker_snapshot(self, snapshot: WorkerSnapshot):
         if self.ctrl.is_stopped:
@@ -66,7 +85,6 @@ class ButlerAgent:
             char_budget -= len(line)
         worker_context = "\n".join(reversed(context_lines))
 
-        # ---- 1. 评估 Worker 行为（纠正/回滚/通过）----
         eval_prompt = BUTLER_EVAL_PROMPT.format(
             task=self.cfg.task[:1000],
             round=snapshot.round,
@@ -87,6 +105,7 @@ class ButlerAgent:
 
         self._consecutive_errors = 0
         self.messages.append(response)
+        self._save()
         content = response.get("content", "")
 
         if response.get("tool_calls"):
@@ -114,12 +133,9 @@ class ButlerAgent:
         else:
             butler_ok(snapshot.round)
 
-        # ---- 2. 评估进度（独立调用，失败不影响主评估）----
         await self._update_progress(snapshot, visible)
 
     async def _update_progress(self, snapshot: WorkerSnapshot, visible_messages: list[dict]):
-        """Butler 根据 Worker 上下文估算进度并更新进度条。"""
-        # 提取最近的动作摘要
         recent_actions = []
         for m in visible_messages[-6:]:
             if m.get("role") == "assistant" and m.get("tool_calls"):
@@ -136,14 +152,12 @@ class ButlerAgent:
         )
 
         try:
-            # 用独立的消息列表，不影响 Butler 主评估上下文
             progress_resp = await chat(
                 self.cfg.butler_model,
                 [{"role": "user", "content": progress_prompt}],
                 None,
             )
             raw = progress_resp.get("content", "")
-            # 尝试提取 JSON
             json_str = raw
             if "```json" in raw:
                 json_str = raw.split("```json")[1].split("```")[0].strip()
@@ -161,8 +175,8 @@ class ButlerAgent:
             self.bus.update_progress(state)
             update_progress_bar(state.percent, f"第{state.current_step + 1}/{state.total_steps}步: {state.step_name}")
         except Exception:
-            # 进度评估失败不影响主流程
-            pass
+            fallback = min(snapshot.round * 10, 90)
+            update_progress_bar(fallback, f"第{snapshot.round}轮")
 
     async def answer_question(self, question: str) -> str:
         prompt = f"[WORKER QUESTION] {question}\nAnswer based on your private knowledge. Be specific and helpful."

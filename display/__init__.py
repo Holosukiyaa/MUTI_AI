@@ -1,8 +1,104 @@
-from .terminal import (
-    worker_header, worker_stream_start, worker_token, worker_stream_end,
-    worker_tool_call, worker_tool_result, worker_ask_butler,
-    butler_ok, butler_interrupt, butler_stream_start, butler_token, butler_stream_end,
-    session_start, butler_answer, session_end, system_msg, error_msg, user_prompt,
-    welcome, init_progress_bar, update_progress_bar, stop_progress_bar,
-    planner_header, planner_task_start, planner_task_done, planner_archive, planner_summary,
-)
+import contextvars
+import datetime
+
+_log_path_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("log_path", default=None)
+_token_buf: list[str] = []
+
+
+def set_log_path(path: str):
+    _log_path_var.set(path)
+
+
+def _push(event: dict):
+    try:
+        from server.main import push_event
+        push_event(event)
+    except Exception:
+        pass
+    log_path = _log_path_var.get()
+    if log_path and event.get("type") == "session_line":
+        try:
+            import os
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            ts = datetime.datetime.now().strftime("%H:%M:%S")
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"[{ts}] {event['line']}\n")
+        except Exception:
+            pass
+
+
+def worker_header(round: int):
+    _push({"type": "session_line", "line": f"━━━  Worker 工作中  ·  第 {round} 轮  ━━━"})
+
+def worker_stream_start():
+    _token_buf.clear()
+
+def worker_token(token: str):
+    _token_buf.append(token)
+
+def worker_stream_end():
+    if _token_buf:
+        text = "".join(_token_buf).strip()
+        _token_buf.clear()
+        if text:
+            _push({"type": "session_line", "line": text})
+
+def worker_tool_call(name: str, args: dict):
+    labels = {"read_file": "读取文件", "write_file": "写入文件", "list_dir": "查看目录"}
+    label = labels.get(name, name)
+    arg = next(iter(args.values()), "")
+    if isinstance(arg, str) and len(arg) > 80:
+        arg = arg[:80] + "…"
+    _push({"type": "session_line", "line": f"  ⚙ {label}  {arg}"})
+
+def worker_tool_result(name: str, result: str):
+    preview = result[:200].replace("\n", " ↵ ")
+    _push({"type": "session_line", "line": f"  └ {preview}"})
+
+def butler_ok(round: int):
+    _push({"type": "session_line", "line": f"  ✓ Butler 审查第 {round} 轮：通过"})
+
+def butler_interrupt(round: int, correction: str):
+    _push({"type": "session_line", "line": f"⚡ Butler 纠正介入 · 第 {round} 轮: {correction}"})
+
+def butler_stream_start(round: int):
+    _push({"type": "session_line", "line": f"━━━  Butler 正在审查第 {round} 轮  ━━━"})
+
+def butler_token(token: str):
+    pass
+
+def butler_stream_end():
+    pass
+
+def worker_ask_butler(question: str):
+    _push({"type": "session_line", "line": f"❓ Worker 向 Butler 提问：{question}"})
+
+def butler_answer(answer: str):
+    _push({"type": "session_line", "line": f"📖 Butler 回答：{answer[:200]}"})
+
+def session_start(task: str, worker_scope: str, butler_scope: str, model_info: str = ""):
+    _push({"type": "session_line", "line": f"Butler × Worker 协同工作台 | 模型：{model_info}"})
+
+def session_end():
+    _push({"type": "session_line", "line": "✓ 任务完成"})
+
+def system_msg(msg: str):
+    _push({"type": "session_line", "line": f"[系统] {msg}"})
+
+def error_msg(who: str, err: str):
+    _push({"type": "session_line", "line": f"[{who} 错误] {err}"})
+
+def user_prompt():
+    pass
+
+def welcome():
+    pass
+
+def init_progress_bar(total_steps: int = 5, task_desc: str = "任务进度"):
+    pass
+
+def update_progress_bar(percent: float, status: str = ""):
+    _push({"type": "session_progress", "percent": percent, "status": status})
+
+def stop_progress_bar(final_status: str = "已完成"):
+    _push({"type": "session_progress", "percent": 100})

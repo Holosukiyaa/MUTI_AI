@@ -6,7 +6,6 @@ from rich import box
 
 console = Console()
 
-# 进度条状态
 _progress_state = {
     "desc": "任务进度",
     "percent": 0.0,
@@ -80,26 +79,6 @@ def butler_stream_end():
     console.print()
 
 
-def welcome():
-    # 橙色大字 ASCII 艺术（Claude Code 风格）
-    logo = (
-        "[bold bright_red] ██████╗ ██╗   ██╗████████╗██╗     ███████╗██████╗ [/bold bright_red]\n"
-        "[bold bright_red] ██╔══██╗██║   ██║╚══██╔══╝██║     ██╔════╝██╔══██╗[/bold bright_red]\n"
-        "[bold bright_red] ██████╔╝██║   ██║   ██║   ██║     █████╗  ██████╔╝[/bold bright_red]\n"
-        "[bold bright_red] ██╔══██╗██║   ██║   ██║   ██║     ██╔══╝  ██╔══██╗[/bold bright_red]\n"
-        "[bold bright_red] ██████╔╝╚██████╔╝   ██║   ███████╗███████╗██║  ██║[/bold bright_red]\n"
-        "[bold bright_red] ╚═════╝  ╚═════╝    ╚═╝   ╚══════╝╚══════╝╚═╝  ╚═╝[/bold bright_red]\n"
-        "[bold bright_red]                                                     [/bold bright_red]\n"
-        "[bold bright_red] ██╗    ██╗ ██████╗ ██████╗ ██╗  ██╗███████╗██████╗ [/bold bright_red]\n"
-        "[bold bright_red] ██║    ██║██╔═══██╗██╔══██╗██║ ██╔╝██╔════╝██╔══██╗[/bold bright_red]\n"
-        "[bold bright_red] ██║ █╗ ██║██║   ██║██████╔╝█████╔╝ █████╗  ██████╔╝[/bold bright_red]\n"
-        "[bold bright_red] ██║███╗██║██║   ██║██╔══██╗██╔═██╗ ██╔══╝  ██╔══██╗[/bold bright_red]\n"
-        "[bold bright_red] ╚███╔███╔╝╚██████╔╝██║  ██║██║  ██╗███████╗██║  ██║[/bold bright_red]\n"
-        "[bold bright_red]  ╚══╝╚══╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝[/bold bright_red]"
-    )
-    console.print()
-    console.print(logo)
-
 def _load_version() -> str:
     try:
         version_file = Path(__file__).resolve().parent.parent / "VERSION"
@@ -107,8 +86,19 @@ def _load_version() -> str:
     except Exception:
         return "0.1.0"
 
-_VERSION = _load_version()
-    console.print("[dim]  Multi-Agent Collaborative Framework  v" + _VERSION + "[/dim]")
+
+def welcome():
+    logo = (
+        "[bold bright_red] ███████╗ ██████╗██╗  ██╗███████╗██╗      ██████╗ ███╗   ██╗[/bold bright_red]\n"
+        "[bold bright_red] ██╔════╝██╔════╝██║  ██║██╔════╝██║     ██╔═══██╗████╗  ██║[/bold bright_red]\n"
+        "[bold bright_red] █████╗  ██║     ███████║█████╗  ██║     ██║   ██║██╔██╗ ██║[/bold bright_red]\n"
+        "[bold bright_red] ██╔══╝  ██║     ██╔══██║██╔══╝  ██║     ██║   ██║██║╚██╗██║[/bold bright_red]\n"
+        "[bold bright_red] ███████╗╚██████╗██║  ██║███████╗███████╗╚██████╔╝██║ ╚████║[/bold bright_red]\n"
+        "[bold bright_red] ╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═══╝[/bold bright_red][dim]  ─── ai[/dim]"
+    )
+    console.print()
+    console.print(logo)
+    console.print("[dim]  Multi-Agent Collaborative Framework  v" + _load_version() + "[/dim]")
     console.print()
     console.print(Panel(
         "[cyan]Butler[/cyan]  拥有私有知识、全局视角，实时监督并纠正 Worker\n"
@@ -152,7 +142,6 @@ def update_progress_bar(percent: float, status: str = ""):
     _progress_state["percent"] = min(max(percent, 0), 100)
     if status:
         _progress_state["status"] = status
-    # 只在进度跨 10% 整数阈值或状态变化时打印（避免刷屏）
     prev_bucket = int(_progress_state.get("last_bucket", -1))
     curr_bucket = int(_progress_state["percent"] // 10)
     if curr_bucket > prev_bucket or status != _progress_state.get("last_status", ""):
