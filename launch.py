@@ -56,7 +56,17 @@ backend = subprocess.Popen(
 
 print("[2/2] 启动前端开发服务器 (port 5173)...")
 frontend = subprocess.Popen([npm, "run", "dev"], cwd=WEB_DIR)
-time.sleep(2)
+
+# 等待后端就绪再打开浏览器，避免 Vite 代理 ECONNREFUSED
+import socket
+for _ in range(20):
+    time.sleep(0.5)
+    try:
+        with socket.create_connection(("127.0.0.1", 8765), timeout=1):
+            break
+    except OSError:
+        continue
+
 webbrowser.open("http://localhost:5173")
 print("已打开 http://localhost:5173  (Ctrl+C 停止)")
 

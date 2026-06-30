@@ -95,6 +95,58 @@ export function LogLine({ line, C }) {
   return <div style={{ color: C.textMid, fontSize: 11, lineHeight: 1.75 }}>{line}</div>;
 }
 
+// 解析 Bubble 内容中的特殊行，返回带样式的 React 元素数组
+function renderBubbleContent(content, C) {
+  if (!content) return null;
+  const lines = content.split("\n");
+  return lines.map((line, i) => {
+    // 错误行：⚠ 开头
+    if (line.startsWith("⚠")) {
+      return (
+        <div key={i} style={{
+          margin: "4px 0", padding: "6px 10px",
+          background: "rgba(239,68,68,0.12)",
+          borderLeft: "3px solid #ef4444",
+          borderRadius: "0 6px 6px 0",
+          color: "#ef4444", fontSize: 13, lineHeight: 1.6,
+        }}>{line}</div>
+      );
+    }
+    // 工具调用行：[正在调用工具: ...]
+    if (line.includes("[正在调用工具:")) {
+      const match = line.match(/\[正在调用工具:\s*([^\]]+)\]/);
+      const toolName = match ? match[1].replace("...", "").trim() : line;
+      return (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, margin: "4px 0" }}>
+          <span style={{
+            background: C.accentSoft, color: C.accent,
+            padding: "2px 8px", borderRadius: 4,
+            fontSize: 11, fontWeight: 600, letterSpacing: 0.3,
+          }}>⚙ {toolName}</span>
+        </div>
+      );
+    }
+    // 系统标记行：[MENTOR CORRECTION] / [ROLLBACK]
+    if (line.startsWith("[MENTOR") || line.startsWith("[ROLLBACK]")) {
+      return (
+        <div key={i} style={{
+          margin: "4px 0", padding: "4px 8px",
+          background: "rgba(245,158,11,0.1)",
+          borderLeft: "3px solid #f59e0b",
+          borderRadius: "0 4px 4px 0",
+          color: "#f59e0b", fontSize: 12,
+        }}>{line}</div>
+      );
+    }
+    // 空行
+    if (!line.trim()) return <div key={i} style={{ height: 6 }} />;
+    // 普通文本
+    return (
+      <div key={i} style={{ color: C.text, lineHeight: 1.7, fontSize: 14 }}>{line}</div>
+    );
+  });
+}
+
 export function Bubble({ msg, C }) {
   const isUser = msg.role === "user";
   return (
@@ -115,10 +167,12 @@ export function Bubble({ msg, C }) {
         borderRadius: isUser ? "16px 4px 16px 16px" : "4px 16px 16px 16px",
         background: isUser ? C.userBg : C.elevated,
         border: `1px solid ${isUser ? C.userBorder : C.border}`,
-        color: C.text, whiteSpace: "pre-wrap", lineHeight: 1.7, fontSize: 14,
         boxShadow: "0 2px 8px rgba(0,0,0,.15)",
       }}>
-        {msg.content}
+        {isUser
+          ? <div style={{ color: C.text, whiteSpace: "pre-wrap", lineHeight: 1.7, fontSize: 14 }}>{msg.content}</div>
+          : renderBubbleContent(msg.content, C)
+        }
         {msg._streaming && <span style={{ color: C.accent, animation: "blink 1s infinite", marginLeft: 3 }}>▊</span>}
       </div>
     </div>

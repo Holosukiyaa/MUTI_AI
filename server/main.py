@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import json
 import asyncio
@@ -18,21 +18,23 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 PLANNERS_DIR = os.path.join(ROOT, ".data", "planners")
-PARTNERS_DIR = os.path.join(ROOT, ".data", "partners")
+SQUADS_DIR = os.path.join(ROOT, ".data", "squads")
 
+# ── WebSocket 广播 ─────────────────────────────────────────────
 _ws_clients: list[WebSocket] = []
 _event_queue: asyncio.Queue | None = None
 
 
 async def broadcast(event: dict):
     dead = []
-    for ws in _ws_clients:
+    for ws in list(_ws_clients):
         try:
             await ws.send_json(event)
         except Exception:
             dead.append(ws)
     for ws in dead:
-        _ws_clients.remove(ws)
+        if ws in _ws_clients:
+            _ws_clients.remove(ws)
 
 
 def push_event(event: dict):
@@ -48,11 +50,16 @@ def push_event(event: dict):
 async def _startup():
     global _event_queue
     _event_queue = asyncio.Queue()
+
     async def _worker():
         while True:
             event = await _event_queue.get()
             await broadcast(event)
+
     asyncio.create_task(_worker())
+
+    # 扫描磁盘，恢复已有 Squad 列表
+    _registry().scan()
 
 
 @app.websocket("/ws")
@@ -63,8 +70,11 @@ async def websocket_endpoint(ws: WebSocket):
         while True:
             await ws.receive_text()
     except WebSocketDisconnect:
-        _ws_clients.remove(ws)
+        if ws in _ws_clients:
+            _ws_clients.remove(ws)
 
+
+# ── 工具函数 ───────────────────────────────────────────────────
 
 def _load_env():
     env_path = os.path.join(ROOT, ".env")
@@ -81,29 +91,45 @@ def _load_env():
 _load_env()
 
 
-async def _run_partner(pname: str, task: str, planner_name: str):
-    import traceback
-    try:
-        from core.partner_session import run_partner_session
-        partner = {"_dir": os.path.join(PARTNERS_DIR, pname), "_name": pname}
-        log_dir = os.path.join(PLANNERS_DIR, planner_name, "logs")
-        os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, f"{pname}.log")
-        await run_partner_session(partner, _make_model(), task, headless=True, log_path=log_path)
-    except Exception:
-        traceback.print_exc()
-        push_event({"type": "session_line", "line": f"[Partner 错误] {traceback.format_exc()[-300:]}"})
-
+def _classify_llm_error(e: Exception) -> str:
+    """将 LLM 异常转换为用户可读的错误信息。"""
+    msg = str(e)
+    if "401" in msg or "Authentication" in msg or "invalid" in msg.lower() and "key" in msg.lower():
+        return "API Key 无效，请在设置中更新 DEEPSEEK_API_KEY"
+    if "429" in msg or "rate limit" in msg.lower() or "quota" in msg.lower():
+        return "请求频率超限（Rate Limit），请稍后重试"
+    if "timeout" in msg.lower() or "timed out" in msg.lower():
+        return "请求超时，请检查网络连接或稍后重试"
+    if "connection" in msg.lower() or "ECONNREFUSED" in msg:
+        return "无法连接到 AI 服务，请检查网络或 BASE_URL 配置"
+    if "insufficient_quota" in msg or "402" in msg:
+        return "账户余额不足，请充值后重试"
+    return f"LLM 请求失败：{msg[:200]}"
 
 
 def _make_model():
     from core.config import ModelConfig
     return ModelConfig(
-        provider="openai", model="deepseek-chat",
+        provider="openai",
+        model="deepseek-chat",
         api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
         base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
     )
 
+
+# ── Squad Registry 单例 ──────────────────────────────────────
+_squad_registry = None
+
+
+def _registry():
+    global _squad_registry
+    if _squad_registry is None:
+        from core.squad.registry import SquadRegistry
+        _squad_registry = SquadRegistry(SQUADS_DIR)
+    return _squad_registry
+
+
+# ── Planner REST ───────────────────────────────────────────────
 
 def _list_planners():
     if not os.path.exists(PLANNERS_DIR):
@@ -122,7 +148,6 @@ def _list_planners():
     return result
 
 
-# ── Planner REST ──────────────────────────────────────────────
 @app.get("/api/planners")
 def get_planners():
     return _list_planners()
@@ -139,7 +164,10 @@ def create_planner(body: PlannerCreate):
     p_dir = os.path.join(PLANNERS_DIR, body.name)
     os.makedirs(p_dir, exist_ok=True)
     with open(os.path.join(p_dir, "meta.json"), "w", encoding="utf-8") as f:
-        json.dump({"name": body.name, "description": body.description, "icon": body.icon}, f, ensure_ascii=False, indent=2)
+        json.dump(
+            {"name": body.name, "description": body.description, "icon": body.icon},
+            f, ensure_ascii=False, indent=2,
+        )
     return {"id": body.name}
 
 
@@ -164,49 +192,6 @@ def get_history(name: str):
 
 class ChatMsg(BaseModel):
     message: str
-
-
-@app.post("/api/planners/{name}/chat")
-async def planner_chat(name: str, body: ChatMsg):
-    p_dir = os.path.join(PLANNERS_DIR, name)
-    if not os.path.exists(p_dir):
-        raise HTTPException(404)
-    from core.planner import PlannerAgent
-    planner = PlannerAgent(
-        model=_make_model(),
-        history_path=os.path.join(p_dir, "history.json"),
-        name=name,
-    )
-    await planner.chat(body.message, on_token=None)
-    reply = (planner.messages[-1].get("content") or "").strip()
-
-    partners_launched = []
-    for tc in planner.last_tool_calls:
-        fn = tc.get("function", {})
-        if fn.get("name") != "assign_to_partner":
-            continue
-        try:
-            args = json.loads(fn.get("arguments", "{}"))
-        except Exception:
-            continue
-        pname = args.get("partner_name", "partner")
-        blueprint = args.get("blueprint", "")
-        task = args.get("task", "")
-        partner_dir = os.path.join(PARTNERS_DIR, pname)
-        butler_dir = os.path.join(partner_dir, "butler")
-        worker_dir = os.path.join(partner_dir, "worker")
-        os.makedirs(butler_dir, exist_ok=True)
-        os.makedirs(worker_dir, exist_ok=True)
-        with open(os.path.join(partner_dir, "config.json"), "w", encoding="utf-8") as f:
-            json.dump({"name": pname, "description": task[:60]}, f, ensure_ascii=False, indent=2)
-        with open(os.path.join(butler_dir, "blueprint.md"), "w", encoding="utf-8") as f:
-            f.write(blueprint)
-        partners_launched.append({"partner": pname, "task": task})
-
-    planner.last_tool_calls = []
-    if not reply and partners_launched:
-        reply = "已创建 " + "、".join(p["partner"] for p in partners_launched) + " 搭档，Butler × Worker 开始执行。"
-    return {"reply": reply, "partners": partners_launched}
 
 
 @app.post("/api/planners/{name}/chat/stream")
@@ -238,40 +223,86 @@ async def planner_chat_stream(name: str, body: ChatMsg):
             except asyncio.TimeoutError:
                 continue
 
-        await chat_task
+        try:
+            await chat_task
+        except Exception as e:
+            err_msg = _classify_llm_error(e)
+            yield f"data: {json.dumps({'error': err_msg})}\n\n"
+            return
 
-        partners_launched = []
+        log_dir = os.path.join(PLANNERS_DIR, name, "logs")
+        squads_launched = []
+
         for tc in planner.last_tool_calls:
             fn = tc.get("function", {})
-            if fn.get("name") != "assign_to_partner":
+            if fn.get("name") != "assign_to_squad":
                 continue
             try:
                 args = json.loads(fn.get("arguments", "{}"))
             except Exception:
                 continue
-            pname = args.get("partner_name", "partner")
+
+            pname = args.get("squad_name", "squad")
             blueprint = args.get("blueprint", "")
             task = args.get("task", "")
-            partner_dir = os.path.join(PARTNERS_DIR, pname)
-            os.makedirs(os.path.join(partner_dir, "butler"), exist_ok=True)
-            os.makedirs(os.path.join(partner_dir, "worker"), exist_ok=True)
-            with open(os.path.join(partner_dir, "config.json"), "w", encoding="utf-8") as f:
-                json.dump({"name": pname, "description": task[:60]}, f, ensure_ascii=False, indent=2)
-            with open(os.path.join(partner_dir, "butler", "blueprint.md"), "w", encoding="utf-8") as f:
-                f.write(blueprint)
-            partners_launched.append({"partner": pname, "task": task})
 
-        for p in partners_launched:
-            asyncio.create_task(_run_partner(p["partner"], p["task"], name))
+            # 通过 Registry 创建 Squad（含清除旧历史）
+            squad = _registry().create(
+                name=pname,
+                task=task,
+                blueprint=blueprint,
+                log_dir=log_dir,
+            )
+            squads_launched.append({"squad": pname, "task": task})
 
-        yield f"data: {json.dumps({'done': True, 'partners': partners_launched})}\n\n"
+            # 异步启动
+            await _registry().start(pname, _make_model(), push_event)
+
+        planner.last_tool_calls = []
+        yield f"data: {json.dumps({'done': True, 'squads': squads_launched})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-# ── Open folder ───────────────────────────────────────────────
+# ── Squad REST ───────────────────────────────────────────────
+
+@app.get("/api/squads")
+def list_squads():
+    """列出所有 Squad（含状态），用于刷新页面后恢复列表。"""
+    return [p.to_dict() for p in _registry().all()]
+
+
+@app.get("/api/squads/{name}")
+def get_squad(name: str):
+    p = _registry().get(name)
+    if not p:
+        raise HTTPException(404)
+    return p.to_dict()
+
+
+@app.delete("/api/squads/{name}")
+def delete_squad(name: str):
+    ok = _registry().delete(name)
+    if not ok:
+        raise HTTPException(404)
+    return {"ok": True}
+
+
+@app.post("/api/squads/{name}/stop")
+def stop_squad(name: str):
+    """停止正在运行的 Squad。"""
+    p = _registry().get(name)
+    if not p:
+        raise HTTPException(404)
+    p.stop()
+    return {"ok": True}
+
+
+# ── 文件夹快捷操作 ─────────────────────────────────────────────
+
 class OpenFolderBody(BaseModel):
     path: str
+
 
 @app.post("/api/open-folder")
 def open_folder(body: OpenFolderBody):
@@ -284,6 +315,7 @@ def open_folder(body: OpenFolderBody):
         subprocess.Popen(["explorer", p])
     return {"ok": True}
 
+
 @app.get("/api/planners/{name}/open")
 def open_planner_folder(name: str):
     import subprocess
@@ -292,24 +324,23 @@ def open_planner_folder(name: str):
         subprocess.Popen(["explorer", p])
     return {"ok": True}
 
-@app.get("/api/partners/{name}/open")
-def open_partner_folder(name: str):
+
+@app.get("/api/squads/{name}/open")
+def open_squad_folder(name: str):
     import subprocess
-    p = os.path.normpath(os.path.join(PARTNERS_DIR, name))
+    reg = _registry()
+    squad = reg.get(name)
+    if squad:
+        p = os.path.normpath(squad._dir)
+    else:
+        p = os.path.normpath(os.path.join(SQUADS_DIR, name))
     if os.path.exists(p):
         subprocess.Popen(["explorer", p])
     return {"ok": True}
 
-@app.delete("/api/partners/{name}")
-def delete_partner(name: str):
-    p = os.path.join(PARTNERS_DIR, name)
-    if not os.path.exists(p):
-        raise HTTPException(404)
-    shutil.rmtree(p, ignore_errors=True)
-    return {"ok": True}
 
+# ── Settings ───────────────────────────────────────────────────
 
-# ── Settings ──────────────────────────────────────────────────
 class ApiKeyBody(BaseModel):
     api_key: str
 
@@ -334,11 +365,11 @@ def get_settings():
         "has_key": bool(key),
         "key_preview": f"sk-...{key[-4:]}" if key else "",
         "planners_dir": PLANNERS_DIR,
-        "partners_dir": PARTNERS_DIR,
+        "squads_dir": SQUADS_DIR,
     }
 
 
-# ── Serve React build ─────────────────────────────────────────
+# ── 静态资源（生产模式）────────────────────────────────────────
 _dist = os.path.join(ROOT, "web", "dist")
 if os.path.exists(_dist):
     app.mount("/assets", StaticFiles(directory=os.path.join(_dist, "assets")), name="assets")

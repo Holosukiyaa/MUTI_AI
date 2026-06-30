@@ -37,4 +37,4 @@ def make_file_handlers(allowed_roots: list[str]) -> dict:
         entries = sorted(p.iterdir(), key=lambda x: (x.is_file(), x.name))
         return "\n".join(("[dir] " if e.is_dir() else "[file] ") + e.name for e in entries)
 
-    return {"read_file": read_file, "write_file": write_file, "list_dir": list_dir}
+    return {"read_file": read_file, "write_file": write_file, "append_file": append_file, "list_dir": list_dir}

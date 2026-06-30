@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import os
 import sys
 import json
@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule
 
-PARTNERS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "partners")
+SQUADS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "squads")
 
 console = Console()
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -134,7 +134,7 @@ async def run_planner_ui(planner, model_factory):
     os.system('cls')
     console.print()
     console.print(Rule(f"[bold magenta]Planner · {planner.name}[/bold magenta]", style="magenta"))
-    console.print("[dim]  与 Planner 对话，Planner 会自动创建 Partner 并启动 Butler+Worker 执行任务[/dim]")
+    console.print("[dim]  与 Planner 对话，Planner 会自动创建 Squad 并启动 Mentor+Worker 执行任务[/dim]")
     console.print("[dim]  /clear 清空记录   /back 返回[/dim]\n")
 
     _replay_history(planner.history())
@@ -169,39 +169,39 @@ async def run_planner_ui(planner, model_factory):
 
         for tc in planner.last_tool_calls:
             fn = tc.get("function", {})
-            if fn.get("name") != "assign_to_partner":
+            if fn.get("name") != "assign_to_squad":
                 continue
             try:
                 args = json.loads(fn.get("arguments", "{}"))
             except Exception:
                 continue
 
-            name = args.get("partner_name", "partner")
+            name = args.get("squad_name", "squad")
             blueprint = args.get("blueprint", "")
             task = args.get("task", "")
 
-            partner_dir = os.path.join(PARTNERS_DIR, name)
-            butler_dir = os.path.join(partner_dir, "butler")
-            worker_dir = os.path.join(partner_dir, "worker")
-            os.makedirs(butler_dir, exist_ok=True)
+            squad_dir = os.path.join(SQUADS_DIR, name)
+            mentor_dir = os.path.join(squad_dir, "mentor")
+            worker_dir = os.path.join(squad_dir, "worker")
+            os.makedirs(mentor_dir, exist_ok=True)
             os.makedirs(worker_dir, exist_ok=True)
-            with open(os.path.join(partner_dir, "config.json"), "w", encoding="utf-8") as f:
+            with open(os.path.join(squad_dir, "config.json"), "w", encoding="utf-8") as f:
                 json.dump({"name": name, "description": task[:60]}, f, ensure_ascii=False, indent=2)
-            with open(os.path.join(butler_dir, "blueprint.md"), "w", encoding="utf-8") as f:
+            with open(os.path.join(mentor_dir, "blueprint.md"), "w", encoding="utf-8") as f:
                 f.write(blueprint)
 
-            partner = {"_name": name, "_dir": partner_dir}
+            squad = {"_name": name, "_dir": squad_dir}
 
             console.print()
             console.print(Panel(
-                f"[cyan]Partner · {name}[/cyan] 已创建\n[dim]{task}[/dim]",
-                border_style="cyan", title="[bold]启动 Partner[/bold]"
+                f"[cyan]Squad · {name}[/cyan] 已创建\n[dim]{task}[/dim]",
+                border_style="cyan", title="[bold]启动 Squad[/bold]"
             ))
 
-            from core.partner_session import run_partner_session
-            await run_partner_session(partner, model_factory(), task)
+            from core.squad.session import run_squad_session
+            await run_squad_session(squad, model_factory(), task)
 
-            planner.confirm_tool_result(tc.get("id", ""), f"Partner '{name}' 已完成任务执行。")
-            console.print(f"\n[dim]Partner · {name} 已结束，返回 Planner 对话...[/dim]")
+            planner.confirm_tool_result(tc.get("id", ""), f"Squad '{name}' 已完成任务执行。")
+            console.print(f"\n[dim]Squad · {name} 已结束，返回 Planner 对话...[/dim]")
 
         planner.last_tool_calls = []

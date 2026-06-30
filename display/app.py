@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import json
 import shutil
@@ -17,7 +17,7 @@ from rich.text import Text
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PLANNERS_DIR = os.path.join(ROOT, ".data", "planners")
-PARTNERS_DIR = os.path.join(ROOT, "partners")
+SQUADS_DIR = os.path.join(ROOT, "squads")
 
 _LOGO = (
     " [bold bright_red]███████╗ ██████╗██╗  ██╗███████╗██╗      ██████╗ ███╗   ██╗[/bold bright_red]\n"
@@ -320,29 +320,29 @@ class PlannerChatScreen(Screen):
 
         for tc in self.planner.last_tool_calls:
             fn = tc.get("function", {})
-            if fn.get("name") != "assign_to_partner":
+            if fn.get("name") != "assign_to_squad":
                 continue
             try:
                 args = json.loads(fn.get("arguments", "{}"))
             except Exception:
                 continue
-            name = args.get("partner_name", "partner")
+            name = args.get("squad_name", "squad")
             blueprint = args.get("blueprint", "")
             task = args.get("task", "")
 
-            partner_dir = os.path.join(PARTNERS_DIR, name)
-            butler_dir = os.path.join(partner_dir, "butler")
-            worker_dir = os.path.join(partner_dir, "worker")
-            os.makedirs(butler_dir, exist_ok=True)
+            squad_dir = os.path.join(SQUADS_DIR, name)
+            mentor_dir = os.path.join(squad_dir, "mentor")
+            worker_dir = os.path.join(squad_dir, "worker")
+            os.makedirs(mentor_dir, exist_ok=True)
             os.makedirs(worker_dir, exist_ok=True)
-            with open(os.path.join(partner_dir, "config.json"), "w", encoding="utf-8") as f:
+            with open(os.path.join(squad_dir, "config.json"), "w", encoding="utf-8") as f:
                 json.dump({"name": name, "description": task[:60]}, f, ensure_ascii=False, indent=2)
-            with open(os.path.join(butler_dir, "blueprint.md"), "w", encoding="utf-8") as f:
+            with open(os.path.join(mentor_dir, "blueprint.md"), "w", encoding="utf-8") as f:
                 f.write(blueprint)
 
-            partner = {"_name": name, "_dir": partner_dir}
-            log.write(f"\n[bold cyan]▶ 启动 Partner · {name}[/bold cyan]  {task}\n")
-            self.app.push_screen(SessionScreen(partner, self.model_factory, task, self.planner, tc.get("id", "")))
+            squad = {"_name": name, "_dir": squad_dir}
+            log.write(f"\n[bold cyan]▶ 启动 Squad · {name}[/bold cyan]  {task}\n")
+            self.app.push_screen(SessionScreen(squad, self.model_factory, task, self.planner, tc.get("id", "")))
 
         self.planner.last_tool_calls = []
 
@@ -356,9 +356,9 @@ class SessionScreen(Screen):
         Binding("escape", "back", "返回"),
     ]
 
-    def __init__(self, partner, model_factory, task, planner=None, tool_call_id=""):
+    def __init__(self, squad, model_factory, task, planner=None, tool_call_id=""):
         super().__init__()
-        self.partner = partner
+        self.squad = squad
         self.model_factory = model_factory
         self.task = task
         self.planner = planner
@@ -373,7 +373,7 @@ class SessionScreen(Screen):
         yield Footer()
 
     def on_mount(self):
-        self.sub_title = f"Partner · {self.partner['_name']}"
+        self.sub_title = f"Squad · {self.squad['_name']}"
         _set_session_screen(self)
         self._run_session()
 
@@ -382,10 +382,10 @@ class SessionScreen(Screen):
 
     @work(exclusive=False)
     async def _run_session(self):
-        from core.partner_session import run_partner_session
-        await run_partner_session(self.partner, self.model_factory(), self.task)
+        from core.squad.session import run_squad_session
+        await run_squad_session(self.squad, self.model_factory(), self.task)
         if self.planner and self.tool_call_id:
-            self.planner.confirm_tool_result(self.tool_call_id, f"Partner '{self.partner['_name']}' 已完成。")
+            self.planner.confirm_tool_result(self.tool_call_id, f"Squad '{self.squad['_name']}' 已完成。")
         log = self.query_one("#session-log", RichLog)
         log.write("\n[bold green]✓ 任务完成[/bold green]  按 Esc 返回")
 

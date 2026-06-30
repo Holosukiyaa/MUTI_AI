@@ -129,7 +129,7 @@ function EmptyState({ onNew }) {
       <div style={{ textAlign:"center", position:"relative" }}>
         <h2 style={{ fontSize:22, fontWeight:700, color:C.text, marginBottom:8 }}>开始使用 Echelon AI</h2>
         <p style={{ fontSize:13, color:C.textMid, lineHeight:1.8, maxWidth:320 }}>
-          创建一个 Planner，与它对话规划任务。<br/>Planner 会自动调度 Butler + Worker 搭档执行。
+          创建一个 Planner，与它对话规划任务。<br/>Planner 会自动调度 Mentor + Worker 搭档执行。
         </p>
       </div>
       <button onClick={onNew} style={{
@@ -208,23 +208,42 @@ function SessionPanel({ session, onClose, onDelete }) {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:"smooth" }); }, [session?.lines?.length]);
   if (!session) return null;
 
+  const isError = session.isError;
+  const headerColor = isError ? "#ef4444" : session.done ? C.green : C.cyan;
+  const statusIcon = isError ? "✗" : session.done ? "✓" : null;
+
   return (
     <div style={{
       width:340, minWidth:340, background:C.surface,
-      borderLeft:`1px solid ${C.border}`, display:"flex", flexDirection:"column",
+      borderLeft:`1px solid ${isError ? "rgba(239,68,68,0.4)" : C.border}`,
+      display:"flex", flexDirection:"column",
       animation:"slideRight .2s ease", position:"relative", overflow:"hidden"
     }}>
-      <GradientOrb style={{ width:200, height:200, top:-60, right:-60, background:`radial-gradient(circle, ${C.accentSoft} 0%, transparent 70%)` }} />
+      <GradientOrb style={{ width:200, height:200, top:-60, right:-60, background:`radial-gradient(circle, ${isError ? "rgba(239,68,68,0.08)" : C.accentSoft} 0%, transparent 70%)` }} />
+
+      {/* 标题栏 */}
       <div style={{ padding:"12px 16px", display:"flex", alignItems:"center", gap:8, borderBottom:`1px solid ${C.border}`, position:"relative" }}>
         <div style={{ position:"relative" }}>
-          {session.done ? <span style={{color:C.green,fontSize:16}}>✓</span> : <Spinner size={12} C={C} />}
+          {statusIcon
+            ? <span style={{color:headerColor, fontSize:16}}>{statusIcon}</span>
+            : <Spinner size={12} C={C} />}
         </div>
         <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontWeight:600, fontSize:12, color:session.done?C.green:C.cyan, letterSpacing:0.5 }}>
-            Partner · {session.partner}
+          <div style={{ fontWeight:600, fontSize:12, color:headerColor, letterSpacing:0.5 }}>
+            Squad · {session.squad}
           </div>
+          {/* 实时状态文本 */}
+          {!session.done && session.lastLine && (
+            <div style={{
+              fontSize:10, color:C.textDim, marginTop:2,
+              overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+              maxWidth:160,
+            }}>
+              {session.lastLine.replace(/^[━\s⚙✓⚡❓📖🚀📋\[\]]+/, "").trim() || "处理中…"}
+            </div>
+          )}
         </div>
-        <button onClick={()=>api.openPartnerFolder(session.partner)}
+        <button onClick={()=>api.openSquadFolder(session.squad)}
           style={{ background:"none", border:"none", cursor:"pointer", fontSize:12, padding:"3px 5px", borderRadius:6, color:C.textDim }}
           onMouseEnter={e=>{e.currentTarget.style.background=C.accentSoft;e.currentTarget.textContent="📂";}}
           onMouseLeave={e=>{e.currentTarget.style.background="none";e.currentTarget.textContent="📁";}}>📁</button>
@@ -238,19 +257,51 @@ function SessionPanel({ session, onClose, onDelete }) {
           onMouseLeave={e=>{e.currentTarget.style.background="none";e.currentTarget.style.color=C.textDim;}}>✕</button>
       </div>
 
+      {/* 进度条 */}
       <div style={{ padding:"8px 16px 10px", borderBottom:`1px solid ${C.border}` }}>
         <div style={{ height:3, background:C.border, borderRadius:2, overflow:"hidden" }}>
-          <div style={{ height:"100%", width:`${session.progress||0}%`, background:C.accentGrad, transition:"width .5s ease", borderRadius:2 }} />
+          <div style={{
+            height:"100%", width:`${session.progress||0}%`,
+            background: isError ? "#ef4444" : C.accentGrad,
+            transition:"width .5s ease", borderRadius:2,
+          }} />
         </div>
-        <div style={{ fontSize:10, color:C.textDim, marginTop:4 }}>{Math.round(session.progress||0)}% 完成</div>
+        <div style={{ display:"flex", justifyContent:"space-between", marginTop:4 }}>
+          <div style={{ fontSize:10, color: isError ? "#ef4444" : C.textDim }}>
+            {isError ? "⚠ 执行出错" : `${Math.round(session.progress||0)}% 完成`}
+          </div>
+          {session.progressStatus && !isError && (
+            <div style={{ fontSize:10, color:C.accent, maxWidth:180, textAlign:"right", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+              {session.progressStatus}
+            </div>
+          )}
+        </div>
       </div>
 
+      {/* 日志 */}
       <div style={{ flex:1, overflowY:"auto", padding:"10px 16px", fontFamily:"'JetBrains Mono','Fira Code',ui-monospace,monospace", fontSize:11, background:C.logBg }}>
+        {session.lines.length === 0 && (
+          <div style={{ color:C.textDim, fontSize:11, textAlign:"center", marginTop:20 }}>
+            <Spinner size={14} C={C} />
+            <div style={{ marginTop:8 }}>等待 Squad 启动…</div>
+          </div>
+        )}
         {session.lines.map((l,i) => <LogLine key={i} line={l} C={C} />)}
         <div ref={bottomRef}/>
       </div>
 
-      {session.report && (
+      {/* 错误报告 */}
+      {isError && session.report && (
+        <div style={{ padding:"12px 16px", background:"rgba(239,68,68,0.06)", borderTop:`1px solid rgba(239,68,68,0.2)`, fontSize:12 }}>
+          <div style={{ fontWeight:600, color:"#ef4444", marginBottom:6, display:"flex", alignItems:"center", gap:6 }}>
+            <span>⚠</span> 错误详情
+          </div>
+          <div style={{ color:"#ef4444", whiteSpace:"pre-wrap", opacity:0.85, fontSize:11 }}>{session.report}</div>
+        </div>
+      )}
+
+      {/* 完成报告 */}
+      {!isError && session.report && (
         <div style={{ padding:"12px 16px", background:"rgba(34,197,94,0.05)", borderTop:`1px solid ${C.border}`, fontSize:12, color:C.text, lineHeight:1.7 }}>
           <div style={{ fontWeight:600, color:C.green, marginBottom:6, display:"flex", alignItems:"center", gap:6 }}>
             <span>✓</span> 验收报告
@@ -277,9 +328,40 @@ function ChatView({ planner, session, setSession }) {
 
   useEffect(() => {
     wsRef.current = createWS((msg) => {
-      if (msg.type==="session_line") setSession(prev=>prev?{...prev,lines:[...prev.lines,msg.line]}:prev);
-      else if (msg.type==="session_progress") setSession(prev=>prev?{...prev,progress:msg.percent}:prev);
-      else if (msg.type==="session_done") setSession(prev=>prev?{...prev,done:true,progress:100,report:msg.report}:prev);
+      if (msg.type==="session_line") {
+        setSession(prev => {
+          if (!prev) return prev;
+          // 只接收属于当前 Squad 的消息
+          if (msg.squad && msg.squad !== prev.squad) return prev;
+          const isError = msg.line?.includes("错误") || msg.line?.startsWith("[");
+          return {
+            ...prev,
+            lines: [...prev.lines, msg.line],
+            lastLine: msg.line,
+            hasError: prev.hasError || isError,
+          };
+        });
+      }
+      else if (msg.type==="session_progress") {
+        setSession(prev => {
+          if (!prev) return prev;
+          if (msg.squad && msg.squad !== prev.squad) return prev;
+          return {...prev, progress: msg.percent, progressStatus: msg.status||""};
+        });
+      }
+      else if (msg.type==="session_done") {
+        setSession(prev => {
+          if (!prev) return prev;
+          if (msg.squad && msg.squad !== prev.squad) return prev;
+          return {
+            ...prev,
+            done: true,
+            progress: 100,
+            report: msg.report,
+            isError: msg.status === "error",
+          };
+        });
+      }
     });
     return () => { wsRef.current?.close(); wsRef.current=null; };
   }, []);
@@ -303,9 +385,13 @@ function ChatView({ planner, session, setSession }) {
     try {
       for await (const chunk of chatStream(planner.id, text)) {
         if (chunk.token) setMessages(prev=>prev.map(m=>m._id===sid?{...m,content:m.content+chunk.token}:m));
+        if (chunk.error) {
+          setMessages(prev=>prev.map(m=>m._id===sid?{...m,content:`⚠ ${chunk.error}`,_streaming:false}:m));
+          return;
+        }
         if (chunk.done) {
           setMessages(prev=>prev.map(m=>m._id===sid?{...m,_streaming:false}:m));
-          if (chunk.partners?.length) setSession({partner:chunk.partners[0].partner,task:chunk.partners[0].task,lines:["Butler × Worker 已启动…"],progress:0});
+          if (chunk.squads?.length) setSession({squad:chunk.squads[0].squad,task:chunk.squads[0].task,lines:["Mentor × Worker 已启动…"],progress:0});
         }
       }
     } catch(err) {
@@ -348,7 +434,7 @@ function ChatView({ planner, session, setSession }) {
       {session && (
         <SessionPanel session={session}
           onClose={()=>setSession(null)}
-          onDelete={async()=>{ await api.deletePartner(session.partner); setSession(null); }}
+          onDelete={async()=>{ await api.deleteSquad(session.squad); setSession(null); }}
         />
       )}
     </div>

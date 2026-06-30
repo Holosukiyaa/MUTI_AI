@@ -1,4 +1,4 @@
-const BASE = "";
+﻿const BASE = "";
 
 export const api = {
   getSettings: () => fetch(`${BASE}/api/settings`).then(r => r.json()),
@@ -13,8 +13,8 @@ export const api = {
     body: JSON.stringify({ message }),
   }).then(r => r.json()),
   openPlannerFolder: (name) => fetch(`${BASE}/api/planners/${name}/open`).then(r => r.json()),
-  openPartnerFolder: (name) => fetch(`${BASE}/api/partners/${name}/open`).then(r => r.json()),
-  deletePartner: (name) => fetch(`${BASE}/api/partners/${name}`, { method: "DELETE" }).then(r => r.json()),
+  openSquadFolder: (name) => fetch(`${BASE}/api/squads/${name}/open`).then(r => r.json()),
+  deleteSquad: (name) => fetch(`${BASE}/api/squads/${name}`, { method: "DELETE" }).then(r => r.json()),
   openFolder: (path) => fetch(`${BASE}/api/open-folder`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

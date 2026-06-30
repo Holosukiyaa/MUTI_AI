@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule
@@ -50,15 +50,15 @@ def worker_tool_result(name: str, result: str):
     console.print(f"  [bright_black]  └ {preview}[/bright_black]")
 
 
-def butler_ok(round: int):
-    console.print(f"  [green]Butler 审查第 {round} 轮：通过 ✓[/green]")
+def mentor_ok(round: int):
+    console.print(f"  [green]Mentor 审查第 {round} 轮：通过 ✓[/green]")
 
 
-def butler_interrupt(round: int, correction: str):
+def mentor_interrupt(round: int, correction: str):
     console.print()
     console.print(Panel(
         f"[bold white]{correction}[/bold white]",
-        title=f"[bold red]⚡ Butler 纠正介入  ·  第 {round} 轮[/bold red]",
+        title=f"[bold red]⚡ Mentor 纠正介入  ·  第 {round} 轮[/bold red]",
         border_style="red",
         box=box.HEAVY,
         padding=(0, 1),
@@ -66,16 +66,16 @@ def butler_interrupt(round: int, correction: str):
     console.print()
 
 
-def butler_stream_start(round: int):
-    console.print(Rule(f"[bold magenta]Butler 正在审查第 {round} 轮[/bold magenta]", style="magenta"))
+def mentor_stream_start(round: int):
+    console.print(Rule(f"[bold magenta]Mentor 正在审查第 {round} 轮[/bold magenta]", style="magenta"))
     console.print("[magenta]●[/magenta] ", end="")
 
 
-def butler_token(token: str):
+def mentor_token(token: str):
     console.print(token, end="", style="magenta")
 
 
-def butler_stream_end():
+def mentor_stream_end():
     console.print()
 
 
@@ -101,9 +101,9 @@ def welcome():
     console.print("[dim]  Multi-Agent Collaborative Framework  v" + _load_version() + "[/dim]")
     console.print()
     console.print(Panel(
-        "[cyan]Butler[/cyan]  拥有私有知识、全局视角，实时监督并纠正 Worker\n"
-        "[green]Worker[/green]  专注执行任务，只能访问指定目录，可主动向 Butler 提问\n\n"
-        "[dim]可用指令：stop / pause worker / pause butler / resume / status / help[/dim]",
+        "[cyan]Mentor[/cyan]  拥有私有知识、全局视角，实时监督并纠正 Worker\n"
+        "[green]Worker[/green]  专注执行任务，只能访问指定目录，可主动向 Mentor 提问\n\n"
+        "[dim]可用指令：stop / pause worker / pause mentor / resume / status / help[/dim]",
         border_style="bright_red",
         box=box.ROUNDED,
         padding=(1, 2),
@@ -160,27 +160,27 @@ def stop_progress_bar(final_status: str = "已完成"):
     _progress_state["active"] = False
 
 
-def session_start(task: str, worker_scope: str, butler_scope: str, model_info: str = ""):
+def session_start(task: str, worker_scope: str, mentor_scope: str, model_info: str = ""):
     console.print(Panel(
         f"[bold]任务：[/bold]{task}\n\n"
         f"[bold]Worker 工作目录：[/bold][cyan]{worker_scope}[/cyan]\n"
-        f"[bold]Butler 监管目录：[/bold][magenta]{butler_scope}[/magenta]\n"
+        f"[bold]Mentor 监管目录：[/bold][magenta]{mentor_scope}[/magenta]\n"
         f"[bold]模型：[/bold]{model_info}",
-        title="[bold green]Butler × Worker  协同工作台[/bold green]",
+        title="[bold green]Mentor × Worker  协同工作台[/bold green]",
         border_style="green",
         box=box.DOUBLE_EDGE,
     ))
     console.print()
 
 
-def worker_ask_butler(question: str):
-    console.print(f"\n  [bold cyan]❓ Worker 向 Butler 提问：[/bold cyan]{question}")
+def worker_ask_mentor(question: str):
+    console.print(f"\n  [bold cyan]❓ Worker 向 Mentor 提问：[/bold cyan]{question}")
 
 
-def butler_answer(answer: str):
+def mentor_answer(answer: str):
     console.print(Panel(
         f"[bold white]{answer}[/bold white]",
-        title="[bold magenta]📖 Butler 回答[/bold magenta]",
+        title="[bold magenta]📖 Mentor 回答[/bold magenta]",
         border_style="magenta",
         box=box.ROUNDED,
         padding=(0, 1),
@@ -198,7 +198,7 @@ def system_msg(msg: str):
 
 
 def error_msg(who: str, err: str):
-    label = {"Worker": "Worker 报错", "Butler": "Butler 报错", "Session": "会话异常"}.get(who, who)
+    label = {"Worker": "Worker 报错", "Mentor": "Mentor 报错", "Session": "会话异常"}.get(who, who)
     console.print(Panel(f"[white]{err}[/white]", title=f"[bold red]{label}[/bold red]", border_style="red"))
 
 

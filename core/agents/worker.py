@@ -1,14 +1,15 @@
-import json
+﻿import json
 import os
 from core.config import SessionConfig, FINISH_TASK_SCHEMA
-from core.bus import CorrectionBus, WorkerSnapshot
+from core.runtime.bus import CorrectionBus, WorkerSnapshot
 from core.llm import chat
 from core.tools import execute_tool
-from core.session import SessionController
+from core.runtime.session import SessionController
+from core.agents.base import BaseAgent
 from display import (
     worker_header, worker_stream_start, worker_token, worker_stream_end,
-    worker_tool_call, worker_tool_result, worker_ask_butler,
-    butler_stream_start, butler_stream_end, butler_answer, error_msg, system_msg,
+    worker_tool_call, worker_tool_result, worker_ask_mentor,
+    mentor_stream_start, mentor_stream_end, mentor_answer, error_msg, system_msg,
 )
 
 _COMPRESS_PROMPT = """Summarize the following conversation history into a compact paragraph that preserves all key decisions, code written, errors encountered, and current progress. Be factual and concise.
@@ -18,14 +19,14 @@ _COMPRESS_PROMPT = """Summarize the following conversation history into a compac
 _COMPRESS_THRESHOLD = 30
 
 
-class WorkerAgent:
+class WorkerAgent(BaseAgent):
     def __init__(self, cfg: SessionConfig, bus: CorrectionBus, tool_handlers: dict, ctrl: SessionController,
-                 ask_butler_fn=None, history_path: str | None = None):
+                 ask_mentor_fn=None, history_path: str | None = None):
         self.cfg = cfg
         self.bus = bus
         self.tool_handlers = tool_handlers
         self.ctrl = ctrl
-        self.ask_butler_fn = ask_butler_fn
+        self.ask_mentor_fn = ask_mentor_fn
         self.history_path = history_path
         self.messages: list[dict] = self._load() or [{"role": "system", "content": cfg.worker_system}]
         self.round = 0
@@ -171,17 +172,17 @@ class WorkerAgent:
             if rollback:
                 snapshot, reason = rollback
                 await self._apply_rollback(snapshot)
-                self.messages.append({"role": "user", "content": f"[BUTLER ROLLBACK] {reason}"})
+                self.messages.append({"role": "user", "content": f"[MENTOR ROLLBACK] {reason}"})
                 continue
 
             if pending_corrections:
-                combined = "\n".join(f"[BUTLER CORRECTION] {c}" for c in pending_corrections)
+                combined = "\n".join(f"[MENTOR CORRECTION] {c}" for c in pending_corrections)
                 self.messages.append({"role": "user", "content": combined})
                 pending_corrections.clear()
 
             corrections = self.bus.drain_corrections()
             if corrections:
-                combined = "\n".join(f"[BUTLER CORRECTION] {c}" for c in corrections)
+                combined = "\n".join(f"[MENTOR CORRECTION] {c}" for c in corrections)
                 self.messages.append({"role": "user", "content": combined})
 
             self.round += 1
@@ -240,13 +241,13 @@ class WorkerAgent:
                         continue
 
                     try:
-                        if name == "ask_butler" and self.ask_butler_fn:
+                        if name == "ask_mentor" and self.ask_mentor_fn:
                             question = args.get("question", "")
-                            worker_ask_butler(question)
-                            butler_stream_start(self.round)
-                            result = await self.ask_butler_fn(question)
-                            butler_stream_end()
-                            butler_answer(result)
+                            worker_ask_mentor(question)
+                            mentor_stream_start(self.round)
+                            result = await self.ask_mentor_fn(question)
+                            mentor_stream_end()
+                            mentor_answer(result)
                         else:
                             result = execute_tool(name, args, self.tool_handlers)
                             worker_tool_result(name, result)

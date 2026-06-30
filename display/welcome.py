@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import msvcrt
 from rich.console import Console
@@ -112,7 +112,7 @@ def _settings():
 
 
 def run_welcome() -> tuple[str, dict | None]:
-    """返回 (choice, partner_or_None)。choice: 'planner'|'partner'|'todo'|'rpg'"""
+    """返回 (choice, squad_or_None)。choice: 'planner'|'squad'|'todo'|'rpg'"""
     _load_env()
     while True:
         choice = _navigate(_MAIN_MENU)
