@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*.pyc
+.env
+.data/
+lab/
+tasks/work/
+devtools/workspace/
