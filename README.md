@@ -1,4 +1,4 @@
-# Echelon AI
+# MUTI_AI
 
 多智能体协作框架 — Planner 规划，Butler 监督，Worker 执行。
 
