@@ -13,7 +13,7 @@ class WorkerSnapshot:
 
 @dataclass
 class ProgressState:
-    """任务进度状态，由 Butler 动态更新"""
+    """任务进度状态，由 Mentor 动态更新"""
     total_steps: int = 5
     current_step: int = 0
     step_name: str = "初始化"
@@ -45,6 +45,13 @@ class CorrectionBus:
 
     def on_snapshot(self, cb: Callable[[WorkerSnapshot], Awaitable[None]]):
         self._snapshot_callbacks.append(cb)
+
+    def remove_snapshot_listener(self, cb: Callable[[WorkerSnapshot], Awaitable[None]]):
+        """移除快照监听器（角色轮换时用于卸载旧 Mentor）。"""
+        try:
+            self._snapshot_callbacks.remove(cb)
+        except ValueError:
+            pass
 
     def on_progress(self, cb: Callable[[ProgressState], None]):
         self._progress_callbacks.append(cb)

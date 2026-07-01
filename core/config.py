@@ -1,7 +1,7 @@
-﻿from dataclasses import dataclass, field
+from dataclasses import dataclass, field
 from typing import Literal
 
-Provider = Literal["openai", "anthropic"]
+Provider = Literal["openai", "anthropic", "claude"]
 
 FINISH_TASK_SCHEMA = {
     "type": "function",
@@ -28,7 +28,6 @@ class SessionConfig:
     worker_subdirs: list[str]
     mentor_model: ModelConfig
     worker_model: ModelConfig
-    planner_model: ModelConfig | None = None
     max_rounds: int = 20
     mentor_system: str = (
         "You are Mentor, an AI project manager with full visibility of the project. "

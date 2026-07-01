@@ -3,7 +3,13 @@ from openai import AsyncOpenAI
 from core.config import ModelConfig
 
 
-async def _openai_chat(cfg: ModelConfig, messages: list[dict], tools: list[dict] | None, on_token: Callable | None) -> dict:
+async def _openai_chat(
+    cfg: ModelConfig,
+    messages: list[dict],
+    tools: list[dict] | None,
+    on_token: Callable | None,
+    on_usage: Callable[[int, int], None] | None = None,
+) -> dict:
     client = AsyncOpenAI(api_key=cfg.api_key, base_url=cfg.base_url)
     kwargs = dict(model=cfg.model, messages=messages, temperature=cfg.temperature, max_tokens=cfg.max_tokens)
     if tools:
@@ -12,11 +18,15 @@ async def _openai_chat(cfg: ModelConfig, messages: list[dict], tools: list[dict]
 
     if on_token:
         kwargs["stream"] = True
+        kwargs["stream_options"] = {"include_usage": True}
         stream = await client.chat.completions.create(**kwargs)
         full_content = ""
         tool_calls_acc: dict[int, dict] = {}
         announced: set[int] = set()
         async for chunk in stream:
+            # 最后一个 chunk 包含 usage
+            if hasattr(chunk, "usage") and chunk.usage and on_usage:
+                on_usage(chunk.usage.prompt_tokens, chunk.usage.completion_tokens)
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta
@@ -43,6 +53,8 @@ async def _openai_chat(cfg: ModelConfig, messages: list[dict], tools: list[dict]
         return result
 
     resp = await client.chat.completions.create(**kwargs)
+    if on_usage and resp.usage:
+        on_usage(resp.usage.prompt_tokens, resp.usage.completion_tokens)
     msg = resp.choices[0].message
     result = {"role": "assistant", "content": msg.content or ""}
     if msg.tool_calls:
