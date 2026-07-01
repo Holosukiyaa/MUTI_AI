@@ -1,9 +1,20 @@
+import os
 import contextvars
 import datetime
+from typing import Callable
 
 _log_path_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("log_path", default=None)
 _squad_name_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("squad_name", default=None)
 _token_buf: list[str] = []
+
+# 事件推送回调，由外部（server/main.py 或任意前端）在启动时注入
+_push_handler: Callable[[dict], None] | None = None
+
+
+def register_push_handler(fn: Callable[[dict], None]) -> None:
+    """注册事件推送回调。fn 接收一个 event dict，负责将其发送到前端。"""
+    global _push_handler
+    _push_handler = fn
 
 
 def set_log_path(path: str):
@@ -20,15 +31,13 @@ def _push(event: dict):
     squad = _squad_name_var.get()
     if squad and "squad" not in event:
         event = {**event, "squad": squad}
-    try:
-        from server.main import push_event
-        push_event(event)
-    except Exception:
-        pass
+
+    if _push_handler is not None:
+        _push_handler(event)
+
     log_path = _log_path_var.get()
     if log_path and event.get("type") == "session_line":
         try:
-            import os
             os.makedirs(os.path.dirname(log_path), exist_ok=True)
             ts = datetime.datetime.now().strftime("%H:%M:%S")
             with open(log_path, "a", encoding="utf-8") as f:

@@ -1,11 +1,15 @@
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
 import { api, chatStream, createWS } from "./api";
 import { THEMES } from "./themes";
-import { Spinner, Modal, Chip, LogLine, Bubble, ChatInput } from "./components";
+import { Spinner, Modal, Chip, LogLine, Bubble, ChatInput, TokenBar } from "./components";
 
 const ThemeCtx = createContext(THEMES.dark);
 const useC = () => useContext(ThemeCtx);
 const PLANNER_ICONS = ["🤖","🧠","⚡","🔬","🎯","🛠","🚀","🌐","💡","🔭","🧬","🎨"];
+const PROVIDER_OPTIONS = [
+  { value: "openai", label: "DeepSeek / OpenAI 兼容", placeholder: "https://api.deepseek.com", modelDefault: "deepseek-chat" },
+  { value: "claude", label: "Claude（Anthropic）", placeholder: "https://api.anthropic.com（可留空）", modelDefault: "claude-opus-4-5" },
+];
 
 function GlobalStyle({ C }) {
   return <style>{`
@@ -44,29 +48,29 @@ function Logo({ themeName, onToggle, collapsed, onCollapse, C }) {
   );
 }
 
-function NavItem({ planner, active, onSelect, onDelete, onOpenFolder, C }) {
+function NavItem({ director, active, onSelect, onDelete, onOpenFolder, C }) {
   const [hov, setHov] = useState(false);
   return (
     <div onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
-      onClick={() => onSelect(planner)}
+      onClick={() => onSelect(director)}
       style={{
         padding:"8px 12px", borderRadius:C.radius, marginBottom:2, cursor:"pointer",
         display:"flex", alignItems:"center", gap:8, position:"relative", transition:"all .15s",
         background: active ? C.accentSoft : hov ? C.glass : "transparent",
         border: `1px solid ${active ? C.userBorder : "transparent"}`,
       }}>
-      <span style={{ fontSize:16, flexShrink:0 }}>{planner.icon||"🤖"}</span>
+      <span style={{ fontSize:16, flexShrink:0 }}>{director.icon||"🤖"}</span>
       <div style={{ flex:1, minWidth:0 }}>
-        <div style={{ fontWeight:500, color:active?C.accent:C.text, fontSize:13, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{planner.id}</div>
-        {planner.description && <div style={{ fontSize:10, color:C.textDim, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{planner.description}</div>}
+        <div style={{ fontWeight:500, color:active?C.accent:C.text, fontSize:13, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{director.id}</div>
+        {director.description && <div style={{ fontSize:10, color:C.textDim, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{director.description}</div>}
       </div>
       {(hov||active) && (
         <div style={{ display:"flex", gap:2 }}>
-          <button onClick={e=>{e.stopPropagation();onOpenFolder(planner.id);}}
+          <button onClick={e=>{e.stopPropagation();onOpenFolder(director.id);}}
             style={{ background:"none", border:"none", cursor:"pointer", fontSize:11, padding:"2px 4px", borderRadius:4, color:C.textDim }}
             onMouseEnter={e=>{e.currentTarget.style.background=C.accentSoft;e.currentTarget.textContent="📂";}}
             onMouseLeave={e=>{e.currentTarget.style.background="none";e.currentTarget.textContent="📁";}}>📁</button>
-          <button onClick={e=>{e.stopPropagation();onDelete(planner.id);}}
+          <button onClick={e=>{e.stopPropagation();onDelete(director.id);}}
             style={{ background:"none", border:"none", cursor:"pointer", fontSize:11, padding:"2px 4px", borderRadius:4, color:C.textDim }}
             onMouseEnter={e=>{e.currentTarget.style.background="rgba(239,68,68,.15)";e.currentTarget.style.color="#ef4444";}}
             onMouseLeave={e=>{e.currentTarget.style.background="none";e.currentTarget.style.color=C.textDim;}}>✕</button>
@@ -76,11 +80,14 @@ function NavItem({ planner, active, onSelect, onDelete, onOpenFolder, C }) {
   );
 }
 
-function Sidebar({ planners, selected, onSelect, onNew, onDelete, settings, onSettings, themeName, onToggleTheme, collapsed, onCollapse }) {
+function Sidebar({ groups, selectedGroup, onSelectGroup, onNewGroup, onDeleteGroup,
+                   directors, selected, onSelect, onNew, onDelete,
+                   settings, onSettings, themeName, onToggleTheme, collapsed, onCollapse }) {
   const C = useC();
+  const [hovGroup, setHovGroup] = useState(null);
   return (
     <div style={{
-      width: collapsed?54:240, minWidth: collapsed?54:240, height:"100%",
+      width: collapsed?54:260, minWidth: collapsed?54:260, height:"100%",
       background: C.surface, borderRight:`1px solid ${C.border}`,
       display:"flex", flexDirection:"column", transition:"width .2s ease", position:"relative", overflow:"hidden",
     }}>
@@ -88,19 +95,59 @@ function Sidebar({ planners, selected, onSelect, onNew, onDelete, settings, onSe
       <Logo themeName={themeName} onToggle={onToggleTheme} collapsed={collapsed} onCollapse={onCollapse} C={C} />
       {!collapsed && (
         <>
+          {/* ── Group 选择栏 ───────────────────────────── */}
           <div style={{ padding:"0 12px 6px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-            <span style={{ fontSize:10, fontWeight:700, color:C.textDim, letterSpacing:1.5, textTransform:"uppercase" }}>Planners</span>
-            <button onClick={onNew} style={{
-              background: C.accentGrad, border:"none", color:"#fff", cursor:"pointer",
-              fontSize:13, lineHeight:1, borderRadius:6, padding:"3px 8px", fontWeight:700,
-              boxShadow:`0 2px 8px ${C.accentSoft}`
-            }}>＋</button>
+            <span style={{ fontSize:10, fontWeight:700, color:C.textDim, letterSpacing:1.5, textTransform:"uppercase" }}>项目组</span>
+            <button onClick={onNewGroup} style={{
+              background:"none", border:`1px solid ${C.glassBorder}`, color:C.textMid,
+              cursor:"pointer", fontSize:11, borderRadius:5, padding:"2px 7px",
+            }} title="新建项目组">＋</button>
+          </div>
+          <div style={{ padding:"0 8px 8px", display:"flex", flexWrap:"wrap", gap:4 }}>
+            {groups.map(g => {
+              const active = g.id === selectedGroup;
+              return (
+                <div key={g.id}
+                  onMouseEnter={()=>setHovGroup(g.id)} onMouseLeave={()=>setHovGroup(null)}
+                  style={{ display:"flex", alignItems:"center", gap:2 }}>
+                  <button onClick={()=>onSelectGroup(g.id)} style={{
+                    padding:"3px 10px", borderRadius:12, cursor:"pointer", fontSize:11, fontWeight:500,
+                    border:`1px solid ${active ? C.accent : C.border}`,
+                    background: active ? C.accentSoft : "transparent",
+                    color: active ? C.accent : C.textMid, transition:"all .15s",
+                  }}>{g.name || g.id}</button>
+                  {hovGroup===g.id && g.id!=="default" && (
+                    <button onClick={e=>{e.stopPropagation();onDeleteGroup(g.id);}} style={{
+                      background:"none", border:"none", cursor:"pointer", fontSize:10,
+                      padding:"1px 3px", borderRadius:4, color:C.textDim,
+                    }}
+                    onMouseEnter={e=>{e.currentTarget.style.color="#ef4444";}}
+                    onMouseLeave={e=>{e.currentTarget.style.color=C.textDim;}}>✕</button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── 当前组的 Director 列表 ──────────────────── */}
+          <div style={{ padding:"0 12px 6px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <span style={{ fontSize:10, fontWeight:700, color:C.textDim, letterSpacing:1.5, textTransform:"uppercase" }}>Directors</span>
+            <div style={{ display:"flex", gap:4 }}>
+              <button onClick={()=>api.openGroupFolder(selectedGroup)} title="打开组文件夹"
+                style={{ background:"none", border:"none", cursor:"pointer", fontSize:12, color:C.textDim, padding:"1px 4px" }}>📂</button>
+              <button onClick={onNew} style={{
+                background: C.accentGrad, border:"none", color:"#fff", cursor:"pointer",
+                fontSize:13, lineHeight:1, borderRadius:6, padding:"3px 8px", fontWeight:700,
+                boxShadow:`0 2px 8px ${C.accentSoft}`
+              }}>＋</button>
+            </div>
           </div>
           <div style={{ flex:1, overflowY:"auto", padding:"0 8px" }}>
-            {planners.length===0 && <div style={{ padding:"16px 8px", color:C.textDim, fontSize:12, textAlign:"center" }}>暂无 Planner<br/><span style={{fontSize:11}}>点击 ＋ 创建</span></div>}
-            {planners.map(p => (
-              <NavItem key={p.id} planner={p} active={selected?.id===p.id} C={C}
-                onSelect={onSelect} onDelete={onDelete} onOpenFolder={api.openPlannerFolder} />
+            {directors.length===0 && <div style={{ padding:"16px 8px", color:C.textDim, fontSize:12, textAlign:"center" }}>暂无 Director<br/><span style={{fontSize:11}}>点击 ＋ 创建</span></div>}
+            {directors.map(d => (
+              <NavItem key={d.id} director={d} active={selected?.id===d.id} C={C}
+                onSelect={onSelect} onDelete={onDelete}
+                onOpenFolder={(name)=>api.openDirectorFolder(selectedGroup, name)} />
             ))}
           </div>
           <div style={{ padding:"10px 12px", borderTop:`1px solid ${C.border}` }}>
@@ -111,7 +158,11 @@ function Sidebar({ planners, selected, onSelect, onNew, onDelete, settings, onSe
               backdropFilter:"blur(4px)"
             }}>
               <span style={{ fontSize:14 }}>⚙</span>
-              <span>API Key: {settings?.has_key ? <span style={{color:C.green}}>● 已配置</span> : <span style={{color:C.red}}>● 未配置</span>}</span>
+              <span style={{ fontSize:11 }}>
+                {settings?.provider === "claude" ? "Claude" : "OpenAI"}
+                {" · "}
+                {settings?.has_key ? <span style={{color:C.green}}>● 已配置</span> : <span style={{color:"#ef4444"}}>● 未配置</span>}
+              </span>
             </button>
           </div>
         </>
@@ -129,7 +180,7 @@ function EmptyState({ onNew }) {
       <div style={{ textAlign:"center", position:"relative" }}>
         <h2 style={{ fontSize:22, fontWeight:700, color:C.text, marginBottom:8 }}>开始使用 Echelon AI</h2>
         <p style={{ fontSize:13, color:C.textMid, lineHeight:1.8, maxWidth:320 }}>
-          创建一个 Planner，与它对话规划任务。<br/>Planner 会自动调度 Mentor + Worker 搭档执行。
+          创建一个 Director，与它对话规划任务。<br/>Director 会自动调度 Mentor + Worker 搭档执行。
         </p>
       </div>
       <button onClick={onNew} style={{
@@ -140,7 +191,7 @@ function EmptyState({ onNew }) {
       }}
         onMouseEnter={e=>e.currentTarget.style.transform="translateY(-1px)"}
         onMouseLeave={e=>e.currentTarget.style.transform="none"}>
-        ＋ 创建第一个 Planner
+        ＋ 创建第一个 Director
       </button>
     </div>
   );
@@ -152,15 +203,78 @@ function InpStyle(C) {
 
 function SettingsModal({ settings, onClose }) {
   const C = useC();
-  const [val, setVal] = useState("");
+  const curProvider = settings?.provider || "openai";
+  const [provider, setProvider] = useState(curProvider);
+  const opt = PROVIDER_OPTIONS.find(o => o.value === provider) || PROVIDER_OPTIONS[0];
+  const [key, setKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState(settings?.base_url || "");
+  const [model, setModel] = useState(settings?.model || opt.modelDefault);
   const [saved, setSaved] = useState(false);
-  const save = async () => { if (!val.trim()) return; await api.setApiKey(val.trim()); setSaved(true); setTimeout(onClose, 800); };
+
+  // 切换 provider 时重置 model 到默认值
+  const handleProviderChange = (v) => {
+    setProvider(v);
+    const o = PROVIDER_OPTIONS.find(x => x.value === v);
+    setModel(o?.modelDefault || "");
+    setBaseUrl("");
+  };
+
+  const save = async () => {
+    if (!key.trim() && !settings?.has_key) return;
+    await api.setProvider({ provider, api_key: key.trim(), base_url: baseUrl.trim(), model: model.trim() });
+    setSaved(true);
+    setTimeout(onClose, 800);
+  };
+
+  const s = InpStyle(C);
+  const labelStyle = { fontSize:11, color:C.textDim, marginBottom:4, letterSpacing:0.5 };
+
   return (
     <Modal onClose={onClose} C={C}>
-      <div style={{ fontWeight:700, fontSize:16, marginBottom:4, color:C.text }}>⚙ 设置</div>
-      <div style={{ color:C.textDim, fontSize:12, marginBottom:16 }}>当前：{settings?.has_key?settings.key_preview:"未配置"}</div>
-      <input autoFocus style={InpStyle(C)} type="password" placeholder="输入 API Key（sk- 开头）" value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>e.key==="Enter"&&save()} />
-      <div style={{ display:"flex", gap:8, marginTop:16, justifyContent:"flex-end" }}>
+      <div style={{ fontWeight:700, fontSize:16, marginBottom:16, color:C.text }}>⚙ AI 服务配置</div>
+
+      {/* Provider 选择 */}
+      <div style={{ marginBottom:14 }}>
+        <div style={labelStyle}>AI 服务商</div>
+        <div style={{ display:"flex", gap:8 }}>
+          {PROVIDER_OPTIONS.map(o => (
+            <button key={o.value} onClick={() => handleProviderChange(o.value)} style={{
+              flex:1, padding:"8px 10px", borderRadius:C.radius, cursor:"pointer", fontSize:12, fontWeight:500,
+              border:`1px solid ${provider===o.value ? C.accent : C.border}`,
+              background: provider===o.value ? C.accentSoft : "transparent",
+              color: provider===o.value ? C.accent : C.textMid,
+              transition:"all .15s",
+            }}>{o.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* API Key */}
+      <div style={{ marginBottom:10 }}>
+        <div style={labelStyle}>API Key {settings?.has_key && <span style={{color:C.green}}>（已配置：{settings.key_preview}）</span>}</div>
+        <input style={s} type="password"
+          placeholder={settings?.has_key ? "留空保持不变（重新填写则覆盖）" : "输入 API Key"}
+          value={key} onChange={e=>setKey(e.target.value)} onKeyDown={e=>e.key==="Enter"&&save()} />
+      </div>
+
+      {/* Base URL */}
+      <div style={{ marginBottom:10 }}>
+        <div style={labelStyle}>
+          Base URL
+          {provider === "claude" && <span style={{color:C.textDim}}> — 只填域名，如 https://api.example.com（系统自动补 /v1/messages）</span>}
+        </div>
+        <input style={s} type="text" placeholder={opt.placeholder}
+          value={baseUrl} onChange={e=>setBaseUrl(e.target.value)} />
+      </div>
+
+      {/* Model */}
+      <div style={{ marginBottom:18 }}>
+        <div style={labelStyle}>模型名称</div>
+        <input style={s} type="text" placeholder={opt.modelDefault}
+          value={model} onChange={e=>setModel(e.target.value)} />
+      </div>
+
+      <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
         <button style={{ background:"none", border:`1px solid ${C.border}`, color:C.textMid, padding:"7px 16px", borderRadius:C.radius, cursor:"pointer" }} onClick={onClose}>取消</button>
         <button style={{ background:C.accentGrad, border:"none", color:"#fff", padding:"7px 16px", borderRadius:C.radius, cursor:"pointer", fontWeight:600, boxShadow:`0 2px 12px ${C.accentSoft}` }} onClick={save}>{saved?"✓ 已保存":"保存"}</button>
       </div>
@@ -168,18 +282,61 @@ function SettingsModal({ settings, onClose }) {
   );
 }
 
-function NewPlannerModal({ onClose, onCreated }) {
+function NewGroupModal({ onClose, onCreated }) {
+  const C = useC();
+  const [id, setId] = useState("");
+  const [name, setName] = useState("");
+  const [desc, setDesc] = useState("");
+  const create = async () => {
+    if (!id.trim()) return;
+    await api.createGroup(id.trim(), name.trim() || id.trim(), desc.trim());
+    onCreated(id.trim());
+  };
+  const s = InpStyle(C);
+  return (
+    <Modal onClose={onClose} C={C}>
+      <div style={{ fontWeight:700, fontSize:16, marginBottom:16, color:C.text }}>新建项目组</div>
+      <input autoFocus style={{ ...s, marginBottom:10 }} placeholder="组 ID（英文/拼音，用作目录名）" value={id} onChange={e=>setId(e.target.value)} onKeyDown={e=>e.key==="Enter"&&create()} />
+      <input style={{ ...s, marginBottom:10 }} placeholder="组名称（显示用，选填）" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&create()} />
+      <input style={{ ...s, marginBottom:18 }} placeholder="描述（选填）" value={desc} onChange={e=>setDesc(e.target.value)} onKeyDown={e=>e.key==="Enter"&&create()} />
+      <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+        <button style={{ background:"none", border:`1px solid ${C.border}`, color:C.textMid, padding:"7px 16px", borderRadius:C.radius, cursor:"pointer" }} onClick={onClose}>取消</button>
+        <button style={{ background:C.accentGrad, border:"none", color:"#fff", padding:"7px 16px", borderRadius:C.radius, cursor:"pointer", fontWeight:600, boxShadow:`0 2px 12px ${C.accentSoft}` }} onClick={create}>创建</button>
+      </div>
+    </Modal>
+  );
+}
+
+const ROLE_OPTIONS = [
+  { value: "executor",  label: "项目执行者", desc: "将任务分配给 Squad 执行，可读取蓝图规划师的蓝图" },
+  { value: "architect", label: "蓝图规划师", desc: "深度需求分析，生成结构化蓝图文档供执行者使用" },
+  { value: "manager",   label: "项目管理员", desc: "专职文件归档、进度记录和项目状态管理" },
+  { value: "custom",    label: "自定义",     desc: "无预设提示词，完全由你自定义角色行为" },
+];
+
+function NewDirectorModal({ onClose, onCreated, groupId = "default" }) {
   const C = useC();
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
   const [icon, setIcon] = useState(() => PLANNER_ICONS[Math.floor(Math.random()*PLANNER_ICONS.length)]);
-  const create = async () => { if (!name.trim()) return; await api.createPlanner(name.trim(), desc.trim(), icon); onCreated(name.trim()); };
+  const [role, setRole] = useState("executor");
+  const [customSystem, setCustomSystem] = useState("");
+
+  const create = async () => {
+    if (!name.trim()) return;
+    await api.createDirector(groupId, name.trim(), desc.trim(), icon, role, customSystem.trim());
+    onCreated(name.trim());
+  };
   const s = InpStyle(C);
+  const labelStyle = { fontSize:11, color:C.textDim, marginBottom:6, letterSpacing:0.5 };
+
   return (
     <Modal onClose={onClose} C={C}>
-      <div style={{ fontWeight:700, fontSize:16, marginBottom:16, color:C.text }}>新建 Planner</div>
+      <div style={{ fontWeight:700, fontSize:16, marginBottom:16, color:C.text }}>新建 Director</div>
+
+      {/* 图标 */}
       <div style={{ marginBottom:14 }}>
-        <div style={{ fontSize:11, color:C.textDim, marginBottom:8, letterSpacing:1 }}>选择图标</div>
+        <div style={labelStyle}>选择图标</div>
         <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
           {PLANNER_ICONS.map(ic=>(
             <button key={ic} onClick={()=>setIcon(ic)} style={{
@@ -192,8 +349,38 @@ function NewPlannerModal({ onClose, onCreated }) {
           ))}
         </div>
       </div>
+
+      {/* 角色选择 */}
+      <div style={{ marginBottom:14 }}>
+        <div style={labelStyle}>角色职责</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+          {ROLE_OPTIONS.map(opt => (
+            <button key={opt.value} onClick={()=>setRole(opt.value)} style={{
+              padding:"8px 12px", borderRadius:C.radius, cursor:"pointer", textAlign:"left",
+              border:`1px solid ${role===opt.value ? C.accent : C.border}`,
+              background: role===opt.value ? C.accentSoft : "transparent",
+              transition:"all .15s",
+            }}>
+              <div style={{ fontSize:12, fontWeight:600, color: role===opt.value ? C.accent : C.text }}>{opt.label}</div>
+              <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{opt.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 自定义提示词（仅 custom） */}
+      {role === "custom" && (
+        <div style={{ marginBottom:14 }}>
+          <div style={labelStyle}>自定义系统提示词</div>
+          <textarea style={{ ...s, minHeight:80, resize:"vertical" }}
+            placeholder="在此输入你的自定义角色提示词..."
+            value={customSystem} onChange={e=>setCustomSystem(e.target.value)} />
+        </div>
+      )}
+
       <input autoFocus style={{ ...s, marginBottom:10 }} placeholder="名称（英文/拼音）" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&create()} />
       <input style={{ ...s, marginBottom:18 }} placeholder="职责描述（选填）" value={desc} onChange={e=>setDesc(e.target.value)} onKeyDown={e=>e.key==="Enter"&&create()} />
+
       <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
         <button style={{ background:"none", border:`1px solid ${C.border}`, color:C.textMid, padding:"7px 16px", borderRadius:C.radius, cursor:"pointer" }} onClick={onClose}>取消</button>
         <button style={{ background:C.accentGrad, border:"none", color:"#fff", padding:"7px 16px", borderRadius:C.radius, cursor:"pointer", fontWeight:600, boxShadow:`0 2px 12px ${C.accentSoft}` }} onClick={create}>创建</button>
@@ -202,7 +389,7 @@ function NewPlannerModal({ onClose, onCreated }) {
   );
 }
 
-function SessionPanel({ session, onClose, onDelete }) {
+function SessionPanel({ session, groupId = "default", onClose, onDelete }) {
   const C = useC();
   const bottomRef = useRef(null);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:"smooth" }); }, [session?.lines?.length]);
@@ -243,7 +430,7 @@ function SessionPanel({ session, onClose, onDelete }) {
             </div>
           )}
         </div>
-        <button onClick={()=>api.openSquadFolder(session.squad)}
+        <button onClick={()=>api.openSquadFolder(groupId, session.squad)}
           style={{ background:"none", border:"none", cursor:"pointer", fontSize:12, padding:"3px 5px", borderRadius:6, color:C.textDim }}
           onMouseEnter={e=>{e.currentTarget.style.background=C.accentSoft;e.currentTarget.textContent="📂";}}
           onMouseLeave={e=>{e.currentTarget.style.background="none";e.currentTarget.textContent="📁";}}>📁</button>
@@ -313,11 +500,12 @@ function SessionPanel({ session, onClose, onDelete }) {
       <div style={{ padding:"8px 16px", borderTop:`1px solid ${C.border}`, fontSize:11, color:C.textDim, background:C.surface }}>
         任务：{session.task}
       </div>
+      <TokenBar tokens={session.tokens} C={C} />
     </div>
   );
 }
 
-function ChatView({ planner, session, setSession }) {
+function ChatView({ director, groupId = "default", session, setSession }) {
   const C = useC();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -349,6 +537,13 @@ function ChatView({ planner, session, setSession }) {
           return {...prev, progress: msg.percent, progressStatus: msg.status||""};
         });
       }
+      else if (msg.type==="token_update") {
+        setSession(prev => {
+          if (!prev) return prev;
+          if (msg.squad && msg.squad !== prev.squad) return prev;
+          return {...prev, tokens: msg};
+        });
+      }
       else if (msg.type==="session_done") {
         setSession(prev => {
           if (!prev) return prev;
@@ -368,8 +563,8 @@ function ChatView({ planner, session, setSession }) {
 
   useEffect(() => {
     setMessages([]); setInput(""); setLoading(false);
-    api.getHistory(planner.id).then(hist => setMessages(hist.map(m=>({role:m.role,content:m.content}))));
-  }, [planner.id]);
+    api.getHistory(groupId, director.id).then(hist => setMessages(hist.map(m=>({role:m.role,content:m.content}))));
+  }, [director.id, groupId]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({behavior:"smooth"}); }, [messages.length, session?.lines?.length]);
 
@@ -383,7 +578,7 @@ function ChatView({ planner, session, setSession }) {
     const sid = Date.now();
     setMessages(prev=>[...prev,{role:"assistant",content:"",_id:sid,_streaming:true}]);
     try {
-      for await (const chunk of chatStream(planner.id, text)) {
+      for await (const chunk of chatStream(groupId, director.id, text)) {
         if (chunk.token) setMessages(prev=>prev.map(m=>m._id===sid?{...m,content:m.content+chunk.token}:m));
         if (chunk.error) {
           setMessages(prev=>prev.map(m=>m._id===sid?{...m,content:`⚠ ${chunk.error}`,_streaming:false}:m));
@@ -405,10 +600,10 @@ function ChatView({ planner, session, setSession }) {
         <GradientOrb style={{ width:400, height:400, top:-100, right:-100, background:`radial-gradient(circle, ${C.accentSoft} 0%, transparent 60%)`, opacity:0.5 }} />
 
         <div style={{ padding:"14px 20px 12px", borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10, background:C.surface, position:"relative" }}>
-          <div style={{ width:34, height:34, borderRadius:C.radius, background:C.elevated, border:`1px solid ${C.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>{planner.icon||"🤖"}</div>
+          <div style={{ width:34, height:34, borderRadius:C.radius, background:C.elevated, border:`1px solid ${C.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>{director.icon||"🤖"}</div>
           <div>
-            <div style={{ fontWeight:600, fontSize:15, color:C.text }}>{planner.id}</div>
-            {planner.description && <div style={{ fontSize:11, color:C.textDim }}>{planner.description}</div>}
+            <div style={{ fontWeight:600, fontSize:15, color:C.text }}>{director.id}</div>
+            {director.description && <div style={{ fontSize:11, color:C.textDim }}>{director.description}</div>}
           </div>
           <div style={{ flex:1 }}/>
           {loading && <div style={{ display:"flex", alignItems:"center", gap:6, color:C.textDim, fontSize:12 }}><Spinner size={12} C={C} />思考中…</div>}
@@ -417,8 +612,8 @@ function ChatView({ planner, session, setSession }) {
         <div style={{ flex:1, overflowY:"auto", padding:"20px", display:"flex", flexDirection:"column", gap:14, position:"relative" }}>
           {messages.length===0 && (
             <div style={{ textAlign:"center", color:C.textDim, marginTop:80, fontSize:13, position:"relative" }}>
-              <div style={{ fontSize:36, marginBottom:12 }}>{planner.icon||"🤖"}</div>
-              <div style={{ color:C.textMid, fontWeight:500, marginBottom:4 }}>Hi, 我是 {planner.id}</div>
+              <div style={{ fontSize:36, marginBottom:12 }}>{director.icon||"🤖"}</div>
+              <div style={{ color:C.textMid, fontWeight:500, marginBottom:4 }}>Hi, 我是 {director.id}</div>
               <div style={{ fontSize:12 }}>告诉我你想完成什么任务</div>
             </div>
           )}
@@ -432,9 +627,9 @@ function ChatView({ planner, session, setSession }) {
       </div>
 
       {session && (
-        <SessionPanel session={session}
+        <SessionPanel session={session} groupId={groupId}
           onClose={()=>setSession(null)}
-          onDelete={async()=>{ await api.deleteSquad(session.squad); setSession(null); }}
+          onDelete={async()=>{ await api.deleteSquad(groupId, session.squad); setSession(null); }}
         />
       )}
     </div>
@@ -444,22 +639,36 @@ function ChatView({ planner, session, setSession }) {
 export default function App() {
   const [themeName, setThemeName] = useState("light");
   const C = THEMES[themeName];
-  const [planners, setPlanners] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [selectedGroup, setSelectedGroup] = useState("default");
+  const [directors, setDirectors] = useState([]);
   const [selected, setSelected] = useState(null);
   const [settings, setSettings] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showNew, setShowNew] = useState(false);
+  const [showNewGroup, setShowNewGroup] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [session, setSession] = useState(null);
 
-  const load = useCallback(() => { api.getPlanners().then(setPlanners); api.getSettings().then(setSettings); }, []);
+  const loadGroups = useCallback(() => { api.getGroups().then(gs => setGroups(gs.length ? gs : [{id:"default",name:"默认组",description:""}])); }, []);
+  const loadDirectors = useCallback(() => { api.getDirectors(selectedGroup).then(setDirectors); }, [selectedGroup]);
+  const load = useCallback(() => { loadGroups(); loadDirectors(); api.getSettings().then(setSettings); }, [loadGroups, loadDirectors]);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadDirectors(); setSelected(null); }, [selectedGroup]);
 
   const del = async (id) => {
-    if (!confirm(`删除 Planner「${id}」？`)) return;
-    await api.deletePlanner(id);
+    if (!confirm(`删除 Director「${id}」？`)) return;
+    await api.deleteDirector(selectedGroup, id);
     if (selected?.id===id) setSelected(null);
-    load();
+    loadDirectors();
+  };
+
+  const delGroup = async (id) => {
+    if (!confirm(`删除项目组「${id}」及其所有数据？此操作不可撤销。`)) return;
+    await api.deleteGroup(id);
+    if (selectedGroup === id) setSelectedGroup("default");
+    loadGroups();
   };
 
   const cycleTheme = () => {
@@ -471,7 +680,10 @@ export default function App() {
     <ThemeCtx.Provider value={C}>
       <GlobalStyle C={C} />
       <div style={{ display:"flex", height:"100vh", width:"100vw", overflow:"hidden", background:C.bg }}>
-        <Sidebar planners={planners} selected={selected} onSelect={setSelected}
+        <Sidebar
+          groups={groups} selectedGroup={selectedGroup}
+          onSelectGroup={setSelectedGroup} onNewGroup={()=>setShowNewGroup(true)} onDeleteGroup={delGroup}
+          directors={directors} selected={selected} onSelect={setSelected}
           onNew={()=>setShowNew(true)} onDelete={del}
           settings={settings} onSettings={()=>setShowSettings(true)}
           themeName={themeName} onToggleTheme={cycleTheme}
@@ -479,12 +691,16 @@ export default function App() {
         />
         <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
           {selected
-            ? <ChatView key={selected.id} planner={selected} session={session} setSession={setSession} />
+            ? <ChatView key={`${selectedGroup}/${selected.id}`} director={selected} groupId={selectedGroup} session={session} setSession={setSession} />
             : <EmptyState onNew={()=>setShowNew(true)} />}
         </div>
       </div>
       {showSettings && <SettingsModal settings={settings} onClose={()=>{ setShowSettings(false); api.getSettings().then(setSettings); }} />}
-      {showNew && <NewPlannerModal onClose={()=>setShowNew(false)} onCreated={name=>{ load(); setShowNew(false); api.getPlanners().then(ps=>{ const p=ps.find(x=>x.id===name); if(p) setSelected(p); }); }} />}
+      {showNew && <NewDirectorModal groupId={selectedGroup} onClose={()=>setShowNew(false)} onCreated={name=>{
+        loadDirectors(); setShowNew(false);
+        api.getDirectors(selectedGroup).then(ds=>{ const d=ds.find(x=>x.id===name); if(d) setSelected(d); });
+      }} />}
+      {showNewGroup && <NewGroupModal onClose={()=>setShowNewGroup(false)} onCreated={gid=>{ loadGroups(); setShowNewGroup(false); setSelectedGroup(gid); }} />}
     </ThemeCtx.Provider>
   );
 }

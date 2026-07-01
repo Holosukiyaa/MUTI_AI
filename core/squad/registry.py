@@ -1,4 +1,4 @@
-﻿"""
+"""
 core/squad_registry.py — Squad 全局注册表
 
 负责：
@@ -81,8 +81,9 @@ class SquadRegistry:
         name: str,
         model: ModelConfig,
         push_event: Callable[[dict], None] | None = None,
+        accept_fn: Callable | None = None,
     ):
         """启动已注册的 Squad（异步，立即返回）。"""
         p = self._instances.get(name)
         if p:
-            await p.start(model, push_event)
+            await p.start(model, push_event, accept_fn=accept_fn)
