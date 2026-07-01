@@ -1,10 +1,10 @@
 import json
 import os
 from core.config import SessionConfig
-from core.runtime.bus import CorrectionBus, WorkerSnapshot, ProgressState
+from core.infra.bus import CorrectionBus, WorkerSnapshot, ProgressState
 from core.llm import chat
-from core.tools import execute_tool
-from core.runtime.session import SessionController
+from core.infra.tools import execute_tool
+from core.infra.session import SessionController
 from core.agents.base import BaseAgent
 from display import mentor_token, mentor_interrupt, mentor_ok, error_msg, update_progress_bar
 
@@ -17,9 +17,18 @@ Round: {round}
 {worker_context}
 === End of Worker context ===
 
-If Worker has written wrong files or gone severely off-track, respond with "ROLLBACK: <reason>".
-If Worker is going slightly off-track, respond with "CORRECT: <fix needed>".
-If Worker is on track, respond with "OK".
+Evaluate Worker's progress and respond with ONE of:
+- "ROLLBACK: <reason>" — Worker has written wrong files or gone severely off-track
+- "CORRECT: <fix needed>" — Worker is slightly off-track, or is about to call finish_task prematurely
+- "OK" — Worker is on track
+
+Special rule for finish_task:
+If Worker is calling or about to call finish_task but any of the following is true, respond with CORRECT:
+- Files contain TODO, placeholders, stubs, or skeleton code
+- Not all required files have been written with complete, runnable content
+- The implementation is incomplete or cannot run without further editing
+Example: "CORRECT: 文件内容不完整，请先完成所有核心功能再调用 finish_task。"
+
 Be concise. Only intervene when necessary."""
 
 _PROGRESS_EVAL_PROMPT = """Based on Worker's current progress on the task, estimate the completion status.
@@ -44,13 +53,16 @@ _MAX_ERRORS = 3
 
 class MentorAgent(BaseAgent):
     def __init__(self, cfg: SessionConfig, bus: CorrectionBus, mentor_tool_handlers: dict, ctrl: SessionController,
-                 history_path: str | None = None):
+                 history_path: str | None = None, tracker=None, agent_name: str = "mentor"):
         self.cfg = cfg
         self.bus = bus
         self.mentor_tool_handlers = mentor_tool_handlers
         self.ctrl = ctrl
         self.history_path = history_path
+        self._tracker = tracker
+        self._agent_name = agent_name
         self._consecutive_errors = 0
+        self._last_worker_messages: list[dict] = []  # RollingStrategy 生成大纲时使用
         self.messages: list[dict] = self._load() or [{"role": "system", "content": cfg.mentor_system}]
         bus.on_snapshot(self._on_worker_snapshot)
 
@@ -70,9 +82,16 @@ class MentorAgent(BaseAgent):
         with open(self.history_path, "w", encoding="utf-8") as f:
             json.dump(self.messages, f, ensure_ascii=False, indent=2)
 
+    def _on_usage(self, inp: int, out: int):
+        if self._tracker:
+            self._tracker.record(self._agent_name, inp, out)
+
     async def _on_worker_snapshot(self, snapshot: WorkerSnapshot):
         if self.ctrl.is_stopped:
             return
+
+        # 保存最新 Worker 消息供 RollingStrategy 生成大纲使用
+        self._last_worker_messages = snapshot.messages
 
         visible = [m for m in snapshot.messages if m["role"] != "system"]
         context_lines = []
@@ -94,7 +113,8 @@ class MentorAgent(BaseAgent):
         self.messages.append({"role": "user", "content": eval_prompt})
 
         try:
-            response = await chat(self.cfg.mentor_model, self.messages, self.cfg.tool_schemas)
+            response = await chat(self.cfg.mentor_model, self.messages, self.cfg.tool_schemas,
+                                  on_usage=self._on_usage)
         except Exception as e:
             self._consecutive_errors += 1
             if self._consecutive_errors >= _MAX_ERRORS:
@@ -157,6 +177,7 @@ class MentorAgent(BaseAgent):
                 self.cfg.mentor_model,
                 [{"role": "user", "content": progress_prompt}],
                 None,
+                on_usage=self._on_usage,
             )
             raw = progress_resp.get("content", "")
             json_str = raw
@@ -184,7 +205,7 @@ class MentorAgent(BaseAgent):
         self.messages.append({"role": "user", "content": prompt})
         try:
             response = await chat(self.cfg.mentor_model, self.messages, None,
-                                  on_token=mentor_token)
+                                  on_token=mentor_token, on_usage=self._on_usage)
         except Exception as e:
             return f"[Mentor错误] {e}"
         self.messages.append(response)

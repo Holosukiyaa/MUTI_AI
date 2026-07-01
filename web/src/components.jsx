@@ -95,56 +95,149 @@ export function LogLine({ line, C }) {
   return <div style={{ color: C.textMid, fontSize: 11, lineHeight: 1.75 }}>{line}</div>;
 }
 
-// 解析 Bubble 内容中的特殊行，返回带样式的 React 元素数组
-function renderBubbleContent(content, C) {
-  if (!content) return null;
+// 轻量 Markdown 渲染器（无依赖）
+function MarkdownRenderer({ content, C, streaming = false }) {
+  if (!content) return streaming ? <span style={{ color: C.accent, animation: "blink 1s infinite" }}>▊</span> : null;
+
+  const elements = [];
   const lines = content.split("\n");
-  return lines.map((line, i) => {
-    // 错误行：⚠ 开头
-    if (line.startsWith("⚠")) {
-      return (
-        <div key={i} style={{
-          margin: "4px 0", padding: "6px 10px",
-          background: "rgba(239,68,68,0.12)",
-          borderLeft: "3px solid #ef4444",
-          borderRadius: "0 6px 6px 0",
-          color: "#ef4444", fontSize: 13, lineHeight: 1.6,
-        }}>{line}</div>
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // 代码块
+    if (line.startsWith("```")) {
+      const lang = line.slice(3).trim();
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      elements.push(
+        <div key={i} style={{ margin: "8px 0", borderRadius: 8, overflow: "hidden", border: `1px solid ${C.border}` }}>
+          {lang && <div style={{ padding: "4px 12px", background: C.accentSoft, color: C.accent, fontSize: 10, fontWeight: 700, letterSpacing: 1 }}>{lang.toUpperCase()}</div>}
+          <pre style={{ margin: 0, padding: "10px 14px", background: C.logBg, overflowX: "auto", fontSize: 12, lineHeight: 1.6, color: C.textMid, fontFamily: "'JetBrains Mono','Fira Code',monospace" }}>
+            {codeLines.join("\n")}
+          </pre>
+        </div>
       );
+      i++;
+      continue;
     }
-    // 工具调用行：[正在调用工具: ...]
+
+    // 水平分割线
+    if (/^---+$/.test(line.trim())) {
+      elements.push(<hr key={i} style={{ border: "none", borderTop: `1px solid ${C.border}`, margin: "10px 0" }} />);
+      i++; continue;
+    }
+
+    // H1
+    if (line.startsWith("# ")) {
+      elements.push(<div key={i} style={{ fontSize: 17, fontWeight: 800, color: C.text, margin: "10px 0 4px", lineHeight: 1.4 }}>{renderInline(line.slice(2), C)}</div>);
+      i++; continue;
+    }
+    // H2
+    if (line.startsWith("## ")) {
+      elements.push(<div key={i} style={{ fontSize: 15, fontWeight: 700, color: C.accent, margin: "8px 0 3px", lineHeight: 1.4 }}>{renderInline(line.slice(3), C)}</div>);
+      i++; continue;
+    }
+    // H3
+    if (line.startsWith("### ")) {
+      elements.push(<div key={i} style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: "6px 0 2px", lineHeight: 1.4 }}>{renderInline(line.slice(4), C)}</div>);
+      i++; continue;
+    }
+
+    // 无序列表
+    if (/^[-*+] /.test(line)) {
+      elements.push(
+        <div key={i} style={{ display: "flex", gap: 6, margin: "2px 0", alignItems: "flex-start" }}>
+          <span style={{ color: C.accent, flexShrink: 0, marginTop: 2, fontSize: 10 }}>◆</span>
+          <span style={{ color: C.text, fontSize: 14, lineHeight: 1.6 }}>{renderInline(line.slice(2), C)}</span>
+        </div>
+      );
+      i++; continue;
+    }
+
+    // 有序列表
+    const orderedMatch = line.match(/^(\d+)\. (.+)/);
+    if (orderedMatch) {
+      elements.push(
+        <div key={i} style={{ display: "flex", gap: 6, margin: "2px 0", alignItems: "flex-start" }}>
+          <span style={{ color: C.accent, flexShrink: 0, fontWeight: 700, fontSize: 12, minWidth: 18 }}>{orderedMatch[1]}.</span>
+          <span style={{ color: C.text, fontSize: 14, lineHeight: 1.6 }}>{renderInline(orderedMatch[2], C)}</span>
+        </div>
+      );
+      i++; continue;
+    }
+
+    // 引用块
+    if (line.startsWith("> ")) {
+      elements.push(
+        <div key={i} style={{ margin: "4px 0", padding: "6px 12px", borderLeft: `3px solid ${C.accent}`, background: C.accentSoft, borderRadius: "0 6px 6px 0" }}>
+          <span style={{ color: C.textMid, fontSize: 13, lineHeight: 1.6, fontStyle: "italic" }}>{renderInline(line.slice(2), C)}</span>
+        </div>
+      );
+      i++; continue;
+    }
+
+    // 工具调用标记行
     if (line.includes("[正在调用工具:")) {
       const match = line.match(/\[正在调用工具:\s*([^\]]+)\]/);
       const toolName = match ? match[1].replace("...", "").trim() : line;
-      return (
+      elements.push(
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, margin: "4px 0" }}>
-          <span style={{
-            background: C.accentSoft, color: C.accent,
-            padding: "2px 8px", borderRadius: 4,
-            fontSize: 11, fontWeight: 600, letterSpacing: 0.3,
-          }}>⚙ {toolName}</span>
+          <span style={{ background: C.accentSoft, color: C.accent, padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600 }}>⚙ {toolName}</span>
         </div>
       );
+      i++; continue;
     }
-    // 系统标记行：[MENTOR CORRECTION] / [ROLLBACK]
-    if (line.startsWith("[MENTOR") || line.startsWith("[ROLLBACK]")) {
-      return (
-        <div key={i} style={{
-          margin: "4px 0", padding: "4px 8px",
-          background: "rgba(245,158,11,0.1)",
-          borderLeft: "3px solid #f59e0b",
-          borderRadius: "0 4px 4px 0",
-          color: "#f59e0b", fontSize: 12,
-        }}>{line}</div>
-      );
-    }
+
     // 空行
-    if (!line.trim()) return <div key={i} style={{ height: 6 }} />;
-    // 普通文本
-    return (
-      <div key={i} style={{ color: C.text, lineHeight: 1.7, fontSize: 14 }}>{line}</div>
+    if (!line.trim()) {
+      elements.push(<div key={i} style={{ height: 6 }} />);
+      i++; continue;
+    }
+
+    // 普通段落
+    elements.push(
+      <div key={i} style={{ color: C.text, fontSize: 14, lineHeight: 1.7, margin: "1px 0" }}>
+        {renderInline(line, C)}
+      </div>
     );
-  });
+    i++;
+  }
+
+  return (
+    <>
+      {elements}
+      {streaming && <span style={{ color: C.accent, animation: "blink 1s infinite", marginLeft: 2 }}>▊</span>}
+    </>
+  );
+}
+
+// 行内格式：**bold**、*italic*、`code`、~~strike~~
+function renderInline(text, C) {
+  if (!text) return null;
+  // 分割行内元素
+  const parts = [];
+  const re = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`|~~(.+?)~~)/g;
+  let last = 0, match;
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > last) parts.push(<span key={last}>{text.slice(last, match.index)}</span>);
+    if (match[1].startsWith("**"))
+      parts.push(<strong key={match.index} style={{ color: C.text, fontWeight: 700 }}>{match[2]}</strong>);
+    else if (match[1].startsWith("*"))
+      parts.push(<em key={match.index} style={{ color: C.textMid }}>{match[3]}</em>);
+    else if (match[1].startsWith("`"))
+      parts.push(<code key={match.index} style={{ background: C.elevated, color: C.accent, padding: "1px 5px", borderRadius: 3, fontSize: 12, fontFamily: "monospace" }}>{match[4]}</code>);
+    else if (match[1].startsWith("~~"))
+      parts.push(<s key={match.index} style={{ color: C.textDim }}>{match[5]}</s>);
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) parts.push(<span key={last}>{text.slice(last)}</span>);
+  return parts.length > 0 ? parts : text;
 }
 
 export function Bubble({ msg, C }) {
@@ -171,10 +264,86 @@ export function Bubble({ msg, C }) {
       }}>
         {isUser
           ? <div style={{ color: C.text, whiteSpace: "pre-wrap", lineHeight: 1.7, fontSize: 14 }}>{msg.content}</div>
-          : renderBubbleContent(msg.content, C)
+          : <MarkdownRenderer content={msg.content} C={C} streaming={!!msg._streaming} />
         }
-        {msg._streaming && <span style={{ color: C.accent, animation: "blink 1s infinite", marginLeft: 3 }}>▊</span>}
       </div>
+    </div>
+  );
+}
+
+function AgentTokenRow({ label, color, usage, limit, C }) {
+  if (!usage) return null;
+  const total = (usage.input || 0) + (usage.output || 0);
+  const percent = Math.min(total / limit * 100, 100);
+  const warn = percent > 80;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+      <span style={{
+        color: color, width: 76, flexShrink: 0, overflow: "hidden",
+        textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600,
+      }}>{label}</span>
+      <div style={{ flex: 1, height: 3, background: C.border, borderRadius: 2, overflow: "hidden" }}>
+        <div style={{
+          height: "100%", width: `${percent}%`,
+          background: warn ? (percent > 95 ? "#ef4444" : "#f59e0b") : color,
+          transition: "width .4s ease", borderRadius: 2,
+        }} />
+      </div>
+      <span style={{ color: warn ? (percent > 95 ? "#ef4444" : "#f59e0b") : C.textDim, width: 68, textAlign: "right", flexShrink: 0 }}>
+        {(total / 1000).toFixed(1)}K / {(limit / 1000).toFixed(0)}K
+      </span>
+    </div>
+  );
+}
+
+export function TokenBar({ tokens, C }) {
+  if (!tokens) return null;
+  const {
+    input_limit, output_limit,
+    mentor_name, worker_name,
+    mentor, worker,
+    input_percent, output_percent,
+    generation = 0,
+  } = tokens;
+  const totalLimit = (input_limit || 176000) + (output_limit || 24000);
+  return (
+    <div style={{
+      padding: "6px 16px 8px",
+      borderTop: `1px solid ${C.border}`,
+      background: C.surface,
+      fontSize: 10,
+      display: "flex",
+      flexDirection: "column",
+      gap: 4,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+        <span style={{ color: C.textDim, fontSize: 9, letterSpacing: 0.5 }}>CONTEXT USAGE</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {generation > 0 && (
+            <span style={{
+              background: C.accentSoft, color: C.accent,
+              padding: "1px 5px", borderRadius: 3, fontSize: 9, fontWeight: 700,
+            }}>G{generation}</span>
+          )}
+          <span style={{ color: (input_percent > 80 || output_percent > 80) ? "#f59e0b" : C.textDim, fontSize: 9 }}>
+            {Math.max(input_percent, output_percent).toFixed(0)}% token
+          </span>
+        </div>
+      </div>
+      <AgentTokenRow
+        label={`🧠 ${mentor_name || "Mentor"}`}
+        color={C.accent}
+        usage={mentor}
+        limit={totalLimit}
+        C={C}
+      />
+      <AgentTokenRow
+        label={`⚒ ${worker_name || "Worker"}`}
+        color={C.cyan || "#06b6d4"}
+        usage={worker}
+        limit={totalLimit}
+        C={C}
+      />
     </div>
   );
 }
