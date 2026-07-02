@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.5.1 — 2026-07-02
+
+### 功能新增
+
+#### Squad 流式输出与工具调用提示（`core/llm/anthropic_provider.py`）
+
+- Anthropic SDK 调用路径新增 `on_token` 回调，支持流式逐字输出
+- 调用工具时向前端推送 `[正在调用工具: xxx...]` 提示，执行过程更透明
+
+#### 执行者 Director 实时监控（`core/director/director.py`、`core/squad/squad.py`）
+
+- 新增 `DirectorAgent.monitor()`：执行者 Director 定期查看 Squad 状态并生成简短进度报告
+- Squad 运行时每 20 秒触发一次监控回调，向前端推送 `director_report` 与 `session_line` 事件
+- 新增 `session_progress` 事件，Worker 启动即上报初始进度
+
+#### Squad 继续执行（`core/squad/squad.py`、`server/main.py`）
+
+- 新增 `Squad.continue_run()`：Squad 完成或中断后可携带用户补充要求重新启动
+- 新增接口 `POST /api/groups/{group_id}/squads/{name}/continue` 及默认组兼容路由
+
+#### 新增服务端接口（`server/main.py`）
+
+- `GET /api/groups/{group_id}/squads/{name}/log`：读取 Squad 运行日志
+- `GET /api/groups/{group_id}/tree`：返回项目组文件树（最多 6 层）
+- Director 创建支持自动去重命名（`_unique_director_name`），名称为空时回退为 `Director`
+
+### 优化
+
+- 验收总结提示词改为 3-5 条 bullet，限制在 300 字以内，避免冗长报告
+- Squad 配置写入完整 `task` 与 `log_path`，加载时可正确恢复日志路径
+- `_build_report` 改为列出交付物文件并给出本地运行建议
+- `SessionController` 新增 `clear_error()`，Squad 重启时自动清除错误状态
+- 修正多个源文件的 BOM / 编码问题
+
+### 前端
+
+- `web/` 界面重写与交互优化（App.jsx / components.jsx / themes.js / index.css）
+- 新增文件树、Squad 日志查看、继续执行等界面能力
+
 ## v0.5.0 — 2026-07-01
 
 ### 架构重构

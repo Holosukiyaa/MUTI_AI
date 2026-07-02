@@ -27,7 +27,7 @@ async def _anthropic_chat(
         if base_url:
             client_kwargs["base_url"] = base_url
         client = anthropic.AsyncAnthropic(**client_kwargs)
-        return await _sdk_chat(client, cfg.model, cfg.max_tokens, messages, tools, on_usage)
+        return await _sdk_chat(client, cfg.model, cfg.max_tokens, messages, tools, on_token, on_usage)
 
 
 async def _httpx_chat(
@@ -219,9 +219,10 @@ async def _sdk_chat(
     max_tokens: int,
     messages: list[dict],
     tools: list[dict] | None,
+    on_token: Callable[[str], None] | None,
     on_usage: Callable[[int, int], None] | None,
 ) -> dict:
-    """标准 Anthropic SDK 调用路径（非 clp_ token）。"""
+    """标准 Anthropic SDK 调用路径；有 on_token 时走流式输出。"""
     system = next((m["content"] for m in messages if m["role"] == "system"), None)
     filtered = [m for m in messages if m["role"] != "system"]
     kwargs: dict = dict(model=model, messages=filtered, max_tokens=max_tokens)
@@ -234,16 +235,28 @@ async def _sdk_chat(
              "input_schema": t["function"]["parameters"]}
             for t in tools
         ]
-    resp = await client.messages.create(**kwargs)
+
+    if on_token:
+        async with client.messages.stream(**kwargs) as stream:
+            async for text in stream.text_stream:
+                on_token(text)
+            resp = await stream.get_final_message()
+    else:
+        resp = await client.messages.create(**kwargs)
+
     if on_usage and resp.usage:
         on_usage(resp.usage.input_tokens, resp.usage.output_tokens)
 
     result: dict = {"role": "assistant", "content": ""}
     tool_calls = []
+    announced: set[str] = set()
     for block in resp.content:
         if block.type == "text":
             result["content"] += block.text
         elif block.type == "tool_use":
+            if on_token and block.name not in announced:
+                on_token(f"\n[正在调用工具: {block.name}...]\n")
+                announced.add(block.name)
             tool_calls.append({
                 "id": block.id,
                 "type": "function",

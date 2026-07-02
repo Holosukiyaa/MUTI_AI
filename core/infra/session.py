@@ -36,6 +36,10 @@ class SessionController:
         self.error_msg = msg
         self._resume_event.set()
 
+    def clear_error(self):
+        self.error_msg = None
+        self.resume()
+
     @property
     def is_running(self) -> bool:
         return self.state == State.RUNNING

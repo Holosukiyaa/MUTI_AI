@@ -45,6 +45,9 @@ export function Chip({ icon, text, color, bg }) {
 
 export function LogLine({ line, C }) {
   if (!line) return null;
+  if (line.startsWith("📡 Director 监控")) {
+    return <div style={{ color: C.magenta || "#a855f7", fontSize: 11, lineHeight: 1.7, margin: "3px 0", fontWeight: 600 }}>{line}</div>;
+  }
   if (line.includes("━━━")) {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0 4px", opacity: 0.5 }}>
@@ -202,7 +205,7 @@ function MarkdownRenderer({ content, C, streaming = false }) {
 
     // 普通段落
     elements.push(
-      <div key={i} style={{ color: C.text, fontSize: 14, lineHeight: 1.7, margin: "1px 0" }}>
+      <div key={i} style={{ color: C.text, fontSize: 13, lineHeight: 1.75, margin: "1px 0" }}>
         {renderInline(line, C)}
       </div>
     );
@@ -255,15 +258,15 @@ export function Bubble({ msg, C }) {
         marginTop: 2,
       }}>{isUser ? "👤" : "🤖"}</div>
       <div style={{
-        maxWidth: "76%",
-        padding: "10px 14px",
-        borderRadius: isUser ? "16px 4px 16px 16px" : "4px 16px 16px 16px",
-        background: isUser ? C.userBg : C.elevated,
-        border: `1px solid ${isUser ? C.userBorder : C.border}`,
-        boxShadow: "0 2px 8px rgba(0,0,0,.15)",
+        maxWidth: isUser ? "62%" : "68%",
+        padding: isUser ? "8px 12px" : "8px 2px",
+        borderRadius: isUser ? "16px 16px 4px 16px" : "0",
+        background: isUser ? C.userBg : "transparent",
+        border: isUser ? `1px solid ${C.userBorder}` : "none",
+        boxShadow: isUser ? "0 8px 24px rgba(15,23,42,.06)" : "none",
       }}>
         {isUser
-          ? <div style={{ color: C.text, whiteSpace: "pre-wrap", lineHeight: 1.7, fontSize: 14 }}>{msg.content}</div>
+          ? <div style={{ color: C.text, whiteSpace: "pre-wrap", lineHeight: 1.65, fontSize: 13 }}>{msg.content}</div>
           : <MarkdownRenderer content={msg.content} C={C} streaming={!!msg._streaming} />
         }
       </div>
@@ -308,7 +311,7 @@ export function TokenBar({ tokens, C }) {
   const totalLimit = (input_limit || 176000) + (output_limit || 24000);
   return (
     <div style={{
-      padding: "6px 16px 8px",
+      padding: "5px 12px 7px",
       borderTop: `1px solid ${C.border}`,
       background: C.surface,
       fontSize: 10,
@@ -350,20 +353,20 @@ export function TokenBar({ tokens, C }) {
 
 export function ChatInput({ input, setInput, loading, onSend, C, textareaRef }) {
   return (
-    <div style={{ padding: "0 16px 16px" }}>
+    <div style={{ padding: "0 24px 20px", maxWidth: 920, width: "100%", margin: "0 auto" }}>
       <div style={{
         display: "flex", alignItems: "flex-end", gap: 0,
         background: C.elevated, border: `1px solid ${C.borderHi}`,
-        borderRadius: C.radiusLg, overflow: "hidden",
-        boxShadow: `0 0 0 1px ${C.glassBorder}, 0 4px 20px rgba(0,0,0,.2)`,
+        borderRadius: 18, overflow: "hidden",
+        boxShadow: "0 16px 48px rgba(31,41,55,.08)",
         transition: "box-shadow .2s",
       }}>
         <textarea ref={textareaRef}
           style={{
             flex: 1, background: "transparent", border: "none", outline: "none",
             color: C.text, resize: "none", lineHeight: 1.6,
-            padding: "12px 16px", maxHeight: 160, fontSize: 14,
-            fontFamily: "inherit", minHeight: 48,
+            padding: "11px 16px", maxHeight: 150, fontSize: 13,
+            fontFamily: "inherit", minHeight: 44,
           }}
           placeholder={loading ? "Planner 正在思考…" : "发送消息 (Enter 发送，Shift+Enter 换行)"}
           value={input} rows={1}

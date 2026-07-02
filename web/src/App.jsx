@@ -15,6 +15,8 @@ function GlobalStyle({ C }) {
   return <style>{`
     body { background:${C.bg}; color:${C.text}; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     input,button,textarea { font-family:inherit; font-size:inherit; }
+    .resize-handle { transition: background .15s, opacity .15s; }
+    .resize-handle:hover { background:${C.accent}; opacity:.75; }
   `}</style>;
 }
 
@@ -23,27 +25,29 @@ function GradientOrb({ style }) {
 }
 
 function Logo({ themeName, onToggle, collapsed, onCollapse, C }) {
+  if (collapsed) {
+    return (
+      <div style={{ padding:"12px 0", display:"flex", flexDirection:"column", alignItems:"center", gap:10 }}>
+        <div style={{ width:32, height:32, borderRadius:9, background:C.name === "light" ? "linear-gradient(135deg,#2f3136,#5b5f66)" : C.accentGrad, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:900, color:"#fff", fontFamily:"monospace", boxShadow:`0 4px 16px ${C.accentSoft}` }}>E</div>
+        <button onClick={onCollapse} style={{ background:"none", border:`1px solid ${C.glassBorder}`, color:C.textMid, borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:12 }}>›</button>
+      </div>
+    );
+  }
   return (
-    <div style={{ padding: collapsed ? "14px 0" : "18px 20px 14px", display:"flex", alignItems:"center", gap:8 }}>
+    <div style={{ padding:"18px 20px 14px", display:"flex", alignItems:"center", gap:8 }}>
       <div style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-        background: C.accentGrad, display:"flex", alignItems:"center", justifyContent:"center",
+        background: C.name === "light" ? "linear-gradient(135deg,#2f3136,#5b5f66)" : C.accentGrad, display:"flex", alignItems:"center", justifyContent:"center",
         fontSize: 14, fontWeight: 900, color: "#fff", fontFamily:"monospace",
         boxShadow: `0 4px 16px ${C.accentSoft}`
       }}>E</div>
-      {!collapsed && (
-        <>
-          <div style={{ flex:1 }}>
-            <div style={{ fontSize:13, fontWeight:800, background:C.accentGrad, WebkitBackgroundClip:"text", backgroundClip:"text", WebkitTextFillColor:"transparent", color:"transparent", letterSpacing:2, fontFamily:"monospace", display:"inline-block" }}>ECHELON</div>
-            <div style={{ fontSize:9, color:C.textDim, letterSpacing:1 }}>AI FRAMEWORK</div>
-          </div>
-          <button onClick={onToggle} style={{ background:"none", border:`1px solid ${C.glassBorder}`, color:C.textMid, borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:13, backdropFilter:"blur(4px)" }}>
-            {themeName==="light"?"☀":themeName==="dark"?"◑":"☾"}
-          </button>
-        </>
-      )}
-      <button onClick={onCollapse} style={{ background:"none", border:`1px solid ${C.glassBorder}`, color:C.textMid, borderRadius:6, padding:"3px 7px", cursor:"pointer", fontSize:12 }}>
-        {collapsed?"›":"‹"}
+      <div style={{ flex:1 }}>
+        <div style={{ fontSize:13, fontWeight:800, color:C.name === "light" ? C.text : "transparent", background:C.name === "light" ? "none" : C.accentGrad, WebkitBackgroundClip:"text", backgroundClip:"text", WebkitTextFillColor:C.name === "light" ? C.text : "transparent", letterSpacing:2, fontFamily:"monospace", display:"inline-block" }}>ECHELON</div>
+        <div style={{ fontSize:9, color:C.textDim, letterSpacing:1 }}>AI FRAMEWORK</div>
+      </div>
+      <button onClick={onToggle} style={{ background:"none", border:`1px solid ${C.glassBorder}`, color:C.textMid, borderRadius:6, padding:"3px 8px", cursor:"pointer", fontSize:13, backdropFilter:"blur(4px)" }}>
+        {themeName==="light"?"☀":themeName==="dark"?"◑":"☾"}
       </button>
+      <button onClick={onCollapse} style={{ background:"none", border:`1px solid ${C.glassBorder}`, color:C.textMid, borderRadius:6, padding:"3px 7px", cursor:"pointer", fontSize:12 }}>‹</button>
     </div>
   );
 }
@@ -80,16 +84,86 @@ function NavItem({ director, active, onSelect, onDelete, onOpenFolder, C }) {
   );
 }
 
+function FileViewerModal({ file, onClose }) {
+  const C = useC();
+  if (!file) return null;
+  return (
+    <Modal onClose={onClose} C={C}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, marginBottom:12 }}>
+        <div style={{ fontWeight:700, fontSize:14, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>📄 {file.path}</div>
+        {file.truncated && <span style={{ color:C.yellow, fontSize:11 }}>已截断</span>}
+      </div>
+      <textarea readOnly value={file.content || ""} style={{
+        width:"100%", height:"58vh", resize:"vertical", background:C.logBg, color:C.text,
+        border:`1px solid ${C.border}`, borderRadius:C.radius, padding:"12px",
+        fontFamily:"'JetBrains Mono','Fira Code',ui-monospace,monospace", fontSize:12, lineHeight:1.6,
+        outline:"none", whiteSpace:"pre",
+      }} />
+      <div style={{ display:"flex", justifyContent:"flex-end", marginTop:12 }}>
+        <button onClick={onClose} style={{ background:C.accentGrad, border:"none", color:"#fff", padding:"7px 16px", borderRadius:C.radius, cursor:"pointer", fontWeight:600 }}>关闭</button>
+      </div>
+    </Modal>
+  );
+}
+
+function FileTreeNode({ node, depth = 0, expanded, toggle, onOpenFile, C }) {
+  const isDir = node.type === "dir";
+  const key = node.path || node.name;
+  const open = expanded[key] ?? depth < 1;
+  return (
+    <div>
+      <div onClick={() => isDir ? toggle(key) : onOpenFile(node)} title={node.path || node.name} style={{
+        display:"flex", alignItems:"center", gap:5, padding:"3px 6px", paddingLeft:6 + depth * 12,
+        borderRadius:6, cursor:"pointer", color:isDir ? C.textMid : C.textDim,
+        fontSize:11, whiteSpace:"nowrap", minWidth:"max-content",
+      }}>
+        <span style={{ width:12, color:isDir ? C.accent : C.textDim }}>{isDir ? (open ? "▾" : "▸") : ""}</span>
+        <span>{isDir ? (open ? "📂" : "📁") : "📄"}</span>
+        <span>{node.name}</span>
+      </div>
+      {isDir && open && node.children?.map(child => (
+        <FileTreeNode key={`${child.path || child.name}-${depth}`} node={child} depth={depth + 1} expanded={expanded} toggle={toggle} onOpenFile={onOpenFile} C={C} />
+      ))}
+    </div>
+  );
+}
+
+function FileTree({ groupId }) {
+  const C = useC();
+  const [tree, setTree] = useState(null);
+  const [expanded, setExpanded] = useState({});
+  const [viewer, setViewer] = useState(null);
+  const loadTree = useCallback(() => api.getFileTree(groupId).then(setTree), [groupId]);
+  useEffect(() => { loadTree(); }, [loadTree]);
+  const toggle = key => setExpanded(prev => ({ ...prev, [key]: !(prev[key] ?? false) }));
+  const openFile = async node => setViewer(await api.getFileContent(groupId, node.path));
+  return (
+    <div style={{ borderTop:`1px solid ${C.border}`, padding:"8px 10px 10px", height:"32%", minHeight:140, overflow:"hidden", display:"flex", flexDirection:"column" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"0 4px 6px", flexShrink:0 }}>
+        <span style={{ fontSize:10, fontWeight:700, color:C.textDim, letterSpacing:1.5, textTransform:"uppercase" }}>文件树</span>
+        <button onClick={loadTree} style={{ background:"none", border:"none", color:C.textDim, cursor:"pointer", fontSize:11 }}>刷新</button>
+      </div>
+      <div style={{ flex:1, overflow:"auto", paddingBottom:4 }}>
+        {tree ? <FileTreeNode node={tree} expanded={expanded} toggle={toggle} onOpenFile={openFile} C={C} /> : <div style={{ color:C.textDim, fontSize:11, padding:6 }}>加载中…</div>}
+      </div>
+      {viewer && <FileViewerModal file={viewer} onClose={()=>setViewer(null)} />}
+    </div>
+  );
+}
+
 function Sidebar({ groups, selectedGroup, onSelectGroup, onNewGroup, onDeleteGroup,
                    directors, selected, onSelect, onNew, onDelete,
-                   settings, onSettings, themeName, onToggleTheme, collapsed, onCollapse }) {
+                   settings, onSettings, themeName, onToggleTheme, collapsed, onCollapse, width = 260 }) {
   const C = useC();
   const [hovGroup, setHovGroup] = useState(null);
+  const sideWidth = collapsed ? 64 : width;
   return (
     <div style={{
-      width: collapsed?54:260, minWidth: collapsed?54:260, height:"100%",
+      width: sideWidth, minWidth: sideWidth, height:"100%",
       background: C.surface, borderRight:`1px solid ${C.border}`,
-      display:"flex", flexDirection:"column", transition:"width .2s ease", position:"relative", overflow:"hidden",
+      display:"flex", flexDirection:"column", transition: collapsed ? "width .2s ease" : "none", position:"relative", overflow:"hidden",
+      boxShadow: collapsed ? `4px 0 18px ${C.glassBorder}` : "0 0 40px rgba(15,23,42,.025)",
+      backdropFilter:"blur(18px)",
     }}>
       {!collapsed && <GradientOrb style={{ width:200, height:200, top:-60, left:-60, background:`radial-gradient(circle, ${C.accentSoft} 0%, transparent 70%)` }} />}
       <Logo themeName={themeName} onToggle={onToggleTheme} collapsed={collapsed} onCollapse={onCollapse} C={C} />
@@ -150,6 +224,7 @@ function Sidebar({ groups, selectedGroup, onSelectGroup, onNewGroup, onDeleteGro
                 onOpenFolder={(name)=>api.openDirectorFolder(selectedGroup, name)} />
             ))}
           </div>
+          <FileTree groupId={selectedGroup} />
           <div style={{ padding:"10px 12px", borderTop:`1px solid ${C.border}` }}>
             <button onClick={onSettings} style={{
               width:"100%", background:"none", border:`1px solid ${C.glassBorder}`,
@@ -323,9 +398,8 @@ function NewDirectorModal({ onClose, onCreated, groupId = "default" }) {
   const [customSystem, setCustomSystem] = useState("");
 
   const create = async () => {
-    if (!name.trim()) return;
-    await api.createDirector(groupId, name.trim(), desc.trim(), icon, role, customSystem.trim());
-    onCreated(name.trim());
+    const res = await api.createDirector(groupId, name.trim(), desc.trim(), icon, role, customSystem.trim());
+    onCreated(res.id);
   };
   const s = InpStyle(C);
   const labelStyle = { fontSize:11, color:C.textDim, marginBottom:6, letterSpacing:0.5 };
@@ -378,7 +452,7 @@ function NewDirectorModal({ onClose, onCreated, groupId = "default" }) {
         </div>
       )}
 
-      <input autoFocus style={{ ...s, marginBottom:10 }} placeholder="名称（英文/拼音）" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&create()} />
+      <input autoFocus style={{ ...s, marginBottom:10 }} placeholder="名称（选填，默认 Director；重名自动编号）" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&create()} />
       <input style={{ ...s, marginBottom:18 }} placeholder="职责描述（选填）" value={desc} onChange={e=>setDesc(e.target.value)} onKeyDown={e=>e.key==="Enter"&&create()} />
 
       <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
@@ -389,9 +463,10 @@ function NewDirectorModal({ onClose, onCreated, groupId = "default" }) {
   );
 }
 
-function SessionPanel({ session, groupId = "default", onClose, onDelete }) {
+function SessionPanel({ session, groupId = "default", width = 340, onResizeStart, onStop, onContinue, onClose, onDelete }) {
   const C = useC();
   const bottomRef = useRef(null);
+  const [showReport, setShowReport] = useState(false);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:"smooth" }); }, [session?.lines?.length]);
   if (!session) return null;
 
@@ -401,15 +476,16 @@ function SessionPanel({ session, groupId = "default", onClose, onDelete }) {
 
   return (
     <div style={{
-      width:340, minWidth:340, background:C.surface,
-      borderLeft:`1px solid ${isError ? "rgba(239,68,68,0.4)" : C.border}`,
+      width, minWidth:260, maxWidth:"52vw", background:C.surface,
+      borderLeft:`1px solid ${isError ? "rgba(239,68,68,0.32)" : C.border}`,
       display:"flex", flexDirection:"column",
-      animation:"slideRight .2s ease", position:"relative", overflow:"hidden"
+      animation:"slideRight .2s ease", position:"relative", overflow:"hidden", backdropFilter:"blur(18px)"
     }}>
+      <div className="resize-handle" onMouseDown={onResizeStart} style={{ position:"absolute", left:0, top:0, bottom:0, width:5, cursor:"col-resize", zIndex:4, opacity:.35 }} />
       <GradientOrb style={{ width:200, height:200, top:-60, right:-60, background:`radial-gradient(circle, ${isError ? "rgba(239,68,68,0.08)" : C.accentSoft} 0%, transparent 70%)` }} />
 
       {/* 标题栏 */}
-      <div style={{ padding:"12px 16px", display:"flex", alignItems:"center", gap:8, borderBottom:`1px solid ${C.border}`, position:"relative" }}>
+      <div style={{ padding:"10px 14px", display:"flex", alignItems:"center", gap:8, borderBottom:`1px solid ${C.border}`, position:"relative" }}>
         <div style={{ position:"relative" }}>
           {statusIcon
             ? <span style={{color:headerColor, fontSize:16}}>{statusIcon}</span>
@@ -430,6 +506,14 @@ function SessionPanel({ session, groupId = "default", onClose, onDelete }) {
             </div>
           )}
         </div>
+        <button onClick={onStop}
+          style={{ background:"none", border:"none", cursor:"pointer", fontSize:12, padding:"3px 5px", borderRadius:6, color:C.textDim }}
+          onMouseEnter={e=>{e.currentTarget.style.background="rgba(239,68,68,.15)";e.currentTarget.style.color="#ef4444";}}
+          onMouseLeave={e=>{e.currentTarget.style.background="none";e.currentTarget.style.color=C.textDim;}}>⏹</button>
+        {(session.done || session.isError) && <button onClick={onContinue}
+          style={{ background:"none", border:"none", cursor:"pointer", fontSize:12, padding:"3px 5px", borderRadius:6, color:C.green }}
+          onMouseEnter={e=>{e.currentTarget.style.background=`${C.green}22`;}}
+          onMouseLeave={e=>{e.currentTarget.style.background="none";}}>▶</button>}
         <button onClick={()=>api.openSquadFolder(groupId, session.squad)}
           style={{ background:"none", border:"none", cursor:"pointer", fontSize:12, padding:"3px 5px", borderRadius:6, color:C.textDim }}
           onMouseEnter={e=>{e.currentTarget.style.background=C.accentSoft;e.currentTarget.textContent="📂";}}
@@ -445,7 +529,7 @@ function SessionPanel({ session, groupId = "default", onClose, onDelete }) {
       </div>
 
       {/* 进度条 */}
-      <div style={{ padding:"8px 16px 10px", borderBottom:`1px solid ${C.border}` }}>
+      <div style={{ padding:"7px 14px 9px", borderBottom:`1px solid ${C.border}` }}>
         <div style={{ height:3, background:C.border, borderRadius:2, overflow:"hidden" }}>
           <div style={{
             height:"100%", width:`${session.progress||0}%`,
@@ -466,7 +550,7 @@ function SessionPanel({ session, groupId = "default", onClose, onDelete }) {
       </div>
 
       {/* 日志 */}
-      <div style={{ flex:1, overflowY:"auto", padding:"10px 16px", fontFamily:"'JetBrains Mono','Fira Code',ui-monospace,monospace", fontSize:11, background:C.logBg }}>
+      <div style={{ flex:1, overflowY:"auto", padding:"8px 14px", fontFamily:"'JetBrains Mono','Fira Code',ui-monospace,monospace", fontSize:10, background:C.logBg }}>
         {session.lines.length === 0 && (
           <div style={{ color:C.textDim, fontSize:11, textAlign:"center", marginTop:20 }}>
             <Spinner size={14} C={C} />
@@ -478,26 +562,33 @@ function SessionPanel({ session, groupId = "default", onClose, onDelete }) {
       </div>
 
       {/* 错误报告 */}
-      {isError && session.report && (
-        <div style={{ padding:"12px 16px", background:"rgba(239,68,68,0.06)", borderTop:`1px solid rgba(239,68,68,0.2)`, fontSize:12 }}>
-          <div style={{ fontWeight:600, color:"#ef4444", marginBottom:6, display:"flex", alignItems:"center", gap:6 }}>
-            <span>⚠</span> 错误详情
+      {isError && session.report && showReport && (
+        <div style={{ maxHeight:160, overflowY:"auto", padding:"12px 16px", background:"rgba(239,68,68,0.06)", borderTop:`1px solid rgba(239,68,68,0.2)`, fontSize:12 }}>
+          <div style={{ fontWeight:600, color:"#ef4444", marginBottom:6, display:"flex", alignItems:"center", justifyContent:"space-between", gap:6 }}>
+            <span>⚠ 错误详情</span>
+            <button onClick={()=>setShowReport(false)} style={{ background:"none", border:"none", color:C.textDim, cursor:"pointer" }}>✕</button>
           </div>
           <div style={{ color:"#ef4444", whiteSpace:"pre-wrap", opacity:0.85, fontSize:11 }}>{session.report}</div>
         </div>
       )}
 
-      {/* 完成报告 */}
-      {!isError && session.report && (
-        <div style={{ padding:"12px 16px", background:"rgba(34,197,94,0.05)", borderTop:`1px solid ${C.border}`, fontSize:12, color:C.text, lineHeight:1.7 }}>
-          <div style={{ fontWeight:600, color:C.green, marginBottom:6, display:"flex", alignItems:"center", gap:6 }}>
-            <span>✓</span> 验收报告
+      {/* 完成报告入口 */}
+      {session.report && !showReport && (
+        <button onClick={()=>setShowReport(true)} style={{ margin:"8px 16px 0", background:"none", border:`1px solid ${C.border}`, color:C.textDim, borderRadius:8, padding:"6px 10px", cursor:"pointer", fontSize:11 }}>
+          {isError ? "查看错误详情" : "查看验收摘要"}
+        </button>
+      )}
+      {!isError && session.report && showReport && (
+        <div style={{ maxHeight:150, overflowY:"auto", padding:"10px 16px", background:"rgba(34,197,94,0.05)", borderTop:`1px solid ${C.border}`, fontSize:12, color:C.text, lineHeight:1.7 }}>
+          <div style={{ fontWeight:600, color:C.green, marginBottom:6, display:"flex", alignItems:"center", justifyContent:"space-between", gap:6 }}>
+            <span>✓ 验收摘要</span>
+            <button onClick={()=>setShowReport(false)} style={{ background:"none", border:"none", color:C.textDim, cursor:"pointer" }}>✕</button>
           </div>
           <div style={{ color:C.textMid, whiteSpace:"pre-wrap" }}>{session.report}</div>
         </div>
       )}
 
-      <div style={{ padding:"8px 16px", borderTop:`1px solid ${C.border}`, fontSize:11, color:C.textDim, background:C.surface }}>
+      <div style={{ padding:"7px 14px", borderTop:`1px solid ${C.border}`, fontSize:10, color:C.textDim, background:C.surface, maxHeight:54, overflow:"auto", lineHeight:1.55 }}>
         任务：{session.task}
       </div>
       <TokenBar tokens={session.tokens} C={C} />
@@ -505,14 +596,16 @@ function SessionPanel({ session, groupId = "default", onClose, onDelete }) {
   );
 }
 
-function ChatView({ director, groupId = "default", session, setSession }) {
+function ChatView({ director, groupId = "default", session, setSession, sessionWidth, onSessionResizeStart }) {
   const C = useC();
+  const storageKey = `chat:${groupId}:${director.id}`;
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
   const wsRef = useRef(null);
+  const abortRef = useRef(null);
 
   useEffect(() => {
     wsRef.current = createWS((msg) => {
@@ -544,6 +637,9 @@ function ChatView({ director, groupId = "default", session, setSession }) {
           return {...prev, tokens: msg};
         });
       }
+      else if (msg.type==="director_report") {
+        setMessages(prev=>[...prev,{role:"assistant",content:`📡 ${msg.report}`}]);
+      }
       else if (msg.type==="session_done") {
         setSession(prev => {
           if (!prev) return prev;
@@ -562,9 +658,23 @@ function ChatView({ director, groupId = "default", session, setSession }) {
   }, []);
 
   useEffect(() => {
-    setMessages([]); setInput(""); setLoading(false);
-    api.getHistory(groupId, director.id).then(hist => setMessages(hist.map(m=>({role:m.role,content:m.content}))));
-  }, [director.id, groupId]);
+    setInput(""); setLoading(false);
+    const cached = localStorage.getItem(storageKey);
+    if (cached) {
+      try { setMessages(JSON.parse(cached)); } catch { setMessages([]); }
+    } else {
+      setMessages([]);
+    }
+    api.getHistory(groupId, director.id).then(hist => {
+      const serverMessages = hist.map(m=>({role:m.role,content:m.content}));
+      setMessages(serverMessages);
+      localStorage.setItem(storageKey, JSON.stringify(serverMessages));
+    });
+  }, [director.id, groupId, storageKey]);
+
+  useEffect(() => {
+    localStorage.setItem(storageKey, JSON.stringify(messages.filter(m => m.content || m._streaming)));
+  }, [messages, storageKey]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({behavior:"smooth"}); }, [messages.length, session?.lines?.length]);
 
@@ -578,7 +688,8 @@ function ChatView({ director, groupId = "default", session, setSession }) {
     const sid = Date.now();
     setMessages(prev=>[...prev,{role:"assistant",content:"",_id:sid,_streaming:true}]);
     try {
-      for await (const chunk of chatStream(groupId, director.id, text)) {
+      abortRef.current = new AbortController();
+      for await (const chunk of chatStream(groupId, director.id, text, abortRef.current.signal)) {
         if (chunk.token) setMessages(prev=>prev.map(m=>m._id===sid?{...m,content:m.content+chunk.token}:m));
         if (chunk.error) {
           setMessages(prev=>prev.map(m=>m._id===sid?{...m,content:`⚠ ${chunk.error}`,_streaming:false}:m));
@@ -590,8 +701,14 @@ function ChatView({ director, groupId = "default", session, setSession }) {
         }
       }
     } catch(err) {
-      setMessages(prev=>prev.map(m=>m._id===sid?{...m,content:`⚠ 请求失败：${err.message}`,_streaming:false}:m));
-    } finally { setLoading(false); }
+      const msg = err.name === "AbortError" ? "已打断，可继续输入新指令" : `⚠ 请求失败：${err.message}`;
+      setMessages(prev=>prev.map(m=>m._id===sid?{...m,content:msg,_streaming:false}:m));
+    } finally { abortRef.current = null; setLoading(false); }
+  };
+
+  const interruptDirector = () => {
+    abortRef.current?.abort();
+    setLoading(false);
   };
 
   return (
@@ -599,17 +716,18 @@ function ChatView({ director, groupId = "default", session, setSession }) {
       <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", background:C.bg, position:"relative" }}>
         <GradientOrb style={{ width:400, height:400, top:-100, right:-100, background:`radial-gradient(circle, ${C.accentSoft} 0%, transparent 60%)`, opacity:0.5 }} />
 
-        <div style={{ padding:"14px 20px 12px", borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10, background:C.surface, position:"relative" }}>
-          <div style={{ width:34, height:34, borderRadius:C.radius, background:C.elevated, border:`1px solid ${C.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>{director.icon||"🤖"}</div>
+        <div style={{ padding:"12px 18px", borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10, background:C.surface, backdropFilter:"blur(18px)", position:"relative" }}>
+          <div style={{ width:32, height:32, borderRadius:10, background:C.elevated, border:`1px solid ${C.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, boxShadow:"0 8px 24px rgba(15,23,42,.05)" }}>{director.icon||"🤖"}</div>
           <div>
-            <div style={{ fontWeight:600, fontSize:15, color:C.text }}>{director.id}</div>
+            <div style={{ fontWeight:650, fontSize:14, color:C.text }}>{director.id}</div>
             {director.description && <div style={{ fontSize:11, color:C.textDim }}>{director.description}</div>}
           </div>
           <div style={{ flex:1 }}/>
+          {loading && <button onClick={interruptDirector} style={{ background:"rgba(239,68,68,.12)", border:`1px solid rgba(239,68,68,.25)`, color:"#ef4444", borderRadius:8, padding:"5px 10px", cursor:"pointer", fontSize:12 }}>打断</button>}
           {loading && <div style={{ display:"flex", alignItems:"center", gap:6, color:C.textDim, fontSize:12 }}><Spinner size={12} C={C} />思考中…</div>}
         </div>
 
-        <div style={{ flex:1, overflowY:"auto", padding:"20px", display:"flex", flexDirection:"column", gap:14, position:"relative" }}>
+        <div style={{ flex:1, overflowY:"auto", padding:"26px 32px", display:"flex", flexDirection:"column", gap:16, position:"relative", maxWidth:920, width:"100%", alignSelf:"center" }}>
           {messages.length===0 && (
             <div style={{ textAlign:"center", color:C.textDim, marginTop:80, fontSize:13, position:"relative" }}>
               <div style={{ fontSize:36, marginBottom:12 }}>{director.icon||"🤖"}</div>
@@ -627,7 +745,9 @@ function ChatView({ director, groupId = "default", session, setSession }) {
       </div>
 
       {session && (
-        <SessionPanel session={session} groupId={groupId}
+        <SessionPanel session={session} groupId={groupId} width={sessionWidth} onResizeStart={onSessionResizeStart}
+          onStop={async()=>{ await api.stopSquad(groupId, session.squad); setSession(prev=>prev?{...prev,done:true,isError:false,report:"已由用户停止"}:prev); }}
+          onContinue={async()=>{ await api.continueSquad(groupId, session.squad, "从上次中断或错误处继续执行"); setSession(prev=>prev?{...prev,done:false,isError:false,report:"",lines:[...prev.lines,"▶ 用户要求继续运行…"],progress:prev.progress||0}:prev); }}
           onClose={()=>setSession(null)}
           onDelete={async()=>{ await api.deleteSquad(groupId, session.squad); setSession(null); }}
         />
@@ -648,7 +768,13 @@ export default function App() {
   const [showNew, setShowNew] = useState(false);
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [session, setSession] = useState(null);
+  const [sidebarWidth, setSidebarWidth] = useState(() => Number(localStorage.getItem("layout:sidebarWidth")) || 228);
+  const [sessionWidth, setSessionWidth] = useState(() => Number(localStorage.getItem("layout:sessionWidth")) || 320);
+  const [session, setSession] = useState(() => {
+    const cached = localStorage.getItem("activeSession");
+    if (!cached) return null;
+    try { return JSON.parse(cached); } catch { return null; }
+  });
 
   const loadGroups = useCallback(() => { api.getGroups().then(gs => setGroups(gs.length ? gs : [{id:"default",name:"默认组",description:""}])); }, []);
   const loadDirectors = useCallback(() => { api.getDirectors(selectedGroup).then(setDirectors); }, [selectedGroup]);
@@ -656,6 +782,38 @@ export default function App() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadDirectors(); setSelected(null); }, [selectedGroup]);
+  useEffect(() => {
+    if (session) localStorage.setItem("activeSession", JSON.stringify(session));
+    else localStorage.removeItem("activeSession");
+  }, [session]);
+
+  const startSidebarResize = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+    const move = ev => {
+      const next = Math.min(420, Math.max(200, startWidth + ev.clientX - startX));
+      setSidebarWidth(next);
+      localStorage.setItem("layout:sidebarWidth", String(next));
+    };
+    const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+
+  const startSessionResize = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sessionWidth;
+    const move = ev => {
+      const next = Math.min(window.innerWidth * 0.62, Math.max(260, startWidth - ev.clientX + startX));
+      setSessionWidth(next);
+      localStorage.setItem("layout:sessionWidth", String(next));
+    };
+    const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
 
   const del = async (id) => {
     if (!confirm(`删除 Director「${id}」？`)) return;
@@ -687,11 +845,12 @@ export default function App() {
           onNew={()=>setShowNew(true)} onDelete={del}
           settings={settings} onSettings={()=>setShowSettings(true)}
           themeName={themeName} onToggleTheme={cycleTheme}
-          collapsed={sidebarCollapsed} onCollapse={()=>setSidebarCollapsed(!sidebarCollapsed)}
+          collapsed={sidebarCollapsed} onCollapse={()=>setSidebarCollapsed(!sidebarCollapsed)} width={sidebarWidth}
         />
+        {!sidebarCollapsed && <div className="resize-handle" onMouseDown={startSidebarResize} style={{ width:5, cursor:"col-resize", background:C.border, opacity:.45 }} />}
         <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
           {selected
-            ? <ChatView key={`${selectedGroup}/${selected.id}`} director={selected} groupId={selectedGroup} session={session} setSession={setSession} />
+            ? <ChatView key={`${selectedGroup}/${selected.id}`} director={selected} groupId={selectedGroup} session={session} setSession={setSession} sessionWidth={sessionWidth} onSessionResizeStart={startSessionResize} />
             : <EmptyState onNew={()=>setShowNew(true)} />}
         </div>
       </div>

@@ -33,8 +33,16 @@ export const api = {
 
   // ── Squads（group 作用域）─────────────────────────────────────
   getSquads: (groupId = "default") => fetch(`${BASE}/api/groups/${groupId}/squads`).then(r => r.json()),
+  getSquadLog: (groupId = "default", name) => fetch(`${BASE}/api/groups/${groupId}/squads/${name}/log`).then(r => r.json()),
+  stopSquad: (groupId = "default", name) => fetch(`${BASE}/api/groups/${groupId}/squads/${name}/stop`, { method: "POST" }).then(r => r.json()),
+  continueSquad: (groupId = "default", name, message = "") => fetch(`${BASE}/api/groups/${groupId}/squads/${name}/continue`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  }).then(r => r.json()),
   deleteSquad: (groupId = "default", name) => fetch(`${BASE}/api/groups/${groupId}/squads/${name}`, { method: "DELETE" }).then(r => r.json()),
   openSquadFolder: (groupId = "default", name) => fetch(`${BASE}/api/groups/${groupId}/squads/${name}/open`).then(r => r.json()),
+  getFileTree: (groupId = "default") => fetch(`${BASE}/api/groups/${groupId}/tree`).then(r => r.json()),
+  getFileContent: (groupId = "default", path) => fetch(`${BASE}/api/groups/${groupId}/file?path=${encodeURIComponent(path)}`).then(r => r.json()),
 
   // ── 文件夹 ─────────────────────────────────────────────────────
   openFolder: (path) => fetch(`${BASE}/api/open-folder`, {
@@ -43,11 +51,12 @@ export const api = {
   }).then(r => r.json()),
 };
 
-export async function* chatStream(groupId = "default", name, message) {
+export async function* chatStream(groupId = "default", name, message, signal) {
   const resp = await fetch(`${BASE}/api/groups/${groupId}/directors/${name}/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message }),
+    signal,
   });
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();

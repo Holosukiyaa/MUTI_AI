@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 import json
 import asyncio
@@ -283,11 +283,22 @@ def get_planners_compat():
 
 
 class DirectorCreate(BaseModel):
-    name: str
+    name: str = ""
     description: str = ""
     icon: str = ""
     role: str = "executor"      # executor | architect | manager | custom
     custom_system: str = ""     # 仅 role=custom 时有效
+
+
+def _unique_director_name(group_id: str, requested: str) -> str:
+    base = "".join(ch for ch in requested.strip() if ch.isalnum() or ch in "-_") or "Director"
+    existing = {d["id"] for d in _list_directors(group_id)}
+    if base not in existing:
+        return base
+    idx = 2
+    while f"{base}-{idx}" in existing:
+        idx += 1
+    return f"{base}-{idx}"
 
 
 def _group_blueprints_dir(group_id: str) -> str:
@@ -297,12 +308,13 @@ def _group_blueprints_dir(group_id: str) -> str:
 @app.post("/api/groups/{group_id}/directors")
 def create_director(group_id: str, body: DirectorCreate):
     _ensure_group(group_id)
-    p_dir = os.path.join(_group_directors_dir(group_id), body.name)
+    director_name = _unique_director_name(group_id, body.name)
+    p_dir = os.path.join(_group_directors_dir(group_id), director_name)
     os.makedirs(p_dir, exist_ok=True)
     with open(os.path.join(p_dir, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(
             {
-                "name": body.name,
+                "name": director_name,
                 "description": body.description,
                 "icon": body.icon,
                 "role": body.role,
@@ -310,7 +322,7 @@ def create_director(group_id: str, body: DirectorCreate):
             },
             f, ensure_ascii=False, indent=2,
         )
-    return {"id": body.name, "group_id": group_id}
+    return {"id": director_name, "group_id": group_id}
 
 
 # 兼容旧路由（默认组）
@@ -432,8 +444,14 @@ async def director_chat_stream(group_id: str, name: str, body: ChatMsg):
                         return await d.accept(task_desc, file_list)
                     return _accept
 
+                async def _make_monitor_fn(d=director):
+                    async def _monitor(status: dict) -> str:
+                        return await d.monitor(status)
+                    return _monitor
+
                 await _registry(group_id).start(pname, _make_model(), push_event,
-                                                 accept_fn=await _make_accept_fn())
+                                                 accept_fn=await _make_accept_fn(),
+                                                 director_report_fn=await _make_monitor_fn())
 
             elif fn_name == "save_blueprint":
                 result = director.handle_save_blueprint(tc)
@@ -477,6 +495,21 @@ def get_squad(group_id: str, name: str):
     return p.to_dict()
 
 
+@app.get("/api/groups/{group_id}/squads/{name}/log")
+def get_squad_log(group_id: str, name: str):
+    p = _registry(group_id).get(name)
+    log_path = None
+    if p:
+        log_path = p._log_path
+    if not log_path:
+        log_path = os.path.join(_group_directors_dir(group_id), name, "logs", f"{name}.log")
+    if not os.path.exists(log_path):
+        return {"lines": []}
+    with open(log_path, encoding="utf-8", errors="replace") as f:
+        lines = [line.rstrip("\n") for line in f]
+    return {"lines": lines}
+
+
 @app.get("/api/squads/{name}")
 def get_squad_default(name: str):
     return get_squad("default", name)
@@ -507,6 +540,64 @@ def stop_squad(group_id: str, name: str):
 @app.post("/api/squads/{name}/stop")
 def stop_squad_default(name: str):
     return stop_squad("default", name)
+
+
+class ContinueBody(BaseModel):
+    message: str = ""
+
+
+@app.post("/api/groups/{group_id}/squads/{name}/continue")
+async def continue_squad(group_id: str, name: str, body: ContinueBody):
+    p = _registry(group_id).get(name)
+    if not p:
+        raise HTTPException(404)
+    await p.continue_run(_make_model(), body.message, push_event)
+    push_event({"type": "session_line", "squad": name, "line": "▶ 继续请求已接收，正在重新启动 Worker…"})
+    push_event({"type": "session_progress", "squad": name, "percent": p.progress, "status": "继续运行中"})
+    return {"ok": True}
+
+
+@app.post("/api/squads/{name}/continue")
+async def continue_squad_default(name: str, body: ContinueBody):
+    return await continue_squad("default", name, body)
+
+
+@app.get("/api/groups/{group_id}/tree")
+def get_group_tree(group_id: str):
+    root = os.path.normpath(os.path.join(GROUPS_DIR, group_id))
+    if not os.path.isdir(root):
+        return {"name": group_id, "type": "dir", "children": []}
+
+    def build(path: str, depth: int = 0) -> dict:
+        name = os.path.basename(path) or group_id
+        if os.path.isfile(path):
+            return {"name": name, "type": "file", "path": os.path.relpath(path, root)}
+        node = {"name": name, "type": "dir", "path": os.path.relpath(path, root), "children": []}
+        if depth >= 6:
+            return node
+        try:
+            entries = sorted(os.listdir(path), key=lambda x: (not os.path.isdir(os.path.join(path, x)), x.lower()))[:200]
+        except Exception:
+            entries = []
+        for entry in entries:
+            if entry.startswith("__pycache__"):
+                continue
+            node["children"].append(build(os.path.join(path, entry), depth + 1))
+        return node
+
+    return build(root)
+
+
+@app.get("/api/groups/{group_id}/file")
+def get_group_file(group_id: str, path: str):
+    root = os.path.normpath(os.path.join(GROUPS_DIR, group_id))
+    target = os.path.normpath(os.path.join(root, path))
+    if not target.startswith(root) or not os.path.isfile(target):
+        raise HTTPException(404)
+    if os.path.getsize(target) > 512_000:
+        return {"path": path, "content": "文件超过 512KB，暂不在内置查看器中打开。", "truncated": True}
+    with open(target, encoding="utf-8", errors="replace") as f:
+        return {"path": path, "content": f.read(), "truncated": False}
 
 
 # ── 文件夹快捷操作 ─────────────────────────────────────────────

@@ -1,4 +1,4 @@
-﻿"""
+"""
 core/squad.py — Squad 生命周期封装
 
 一个 Squad = 一个 Mentor + 一个 Worker。
@@ -152,9 +152,14 @@ class Squad:
         with open(os.path.join(mentor_dir, "blueprint.md"), "w", encoding="utf-8") as f:
             f.write(blueprint)
 
+        log_path = None
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+            log_path = os.path.join(log_dir, f"{name}.log")
+
         # 写入 Squad 配置
         with open(os.path.join(squad_dir, "config.json"), "w", encoding="utf-8") as f:
-            json.dump({"name": name, "description": task[:60]}, f, ensure_ascii=False, indent=2)
+            json.dump({"name": name, "description": task[:60], "task": task, "log_path": log_path}, f, ensure_ascii=False, indent=2)
 
         # 清除旧历史（Bug #2 修复）
         if clear_history:
@@ -164,11 +169,6 @@ class Squad:
             ]:
                 if os.path.exists(hist):
                     os.remove(hist)
-
-        log_path = None
-        if log_dir:
-            os.makedirs(log_dir, exist_ok=True)
-            log_path = os.path.join(log_dir, f"{name}.log")
 
         return cls(name=name, task=task, squad_dir=squad_dir, log_path=log_path)
 
@@ -184,19 +184,32 @@ class Squad:
                 cfg = json.load(f)
         except Exception:
             return None
-        return cls(name=name, task=cfg.get("description", ""), squad_dir=squad_dir)
+        return cls(name=name, task=cfg.get("task") or cfg.get("description", ""), squad_dir=squad_dir, log_path=cfg.get("log_path"))
 
     # ── 生命周期 ────────────────────────────────────────────────
 
     async def start(self, model: ModelConfig, push_event: Callable[[dict], None] | None = None,
-                    accept_fn: Callable[[str, str], "asyncio.Future"] | None = None):
+                    accept_fn: Callable[[str, str], "asyncio.Future"] | None = None,
+                    director_report_fn: Callable[[dict], "asyncio.Future"] | None = None):
         """异步启动 Mentor+Worker，立即返回（任务在后台运行）。
         accept_fn: 可选验收回调，签名为 async (task, file_list) -> str，由 Planner 执行验收。
+        director_report_fn: 可选监控回调，仅执行者 Director 使用。
         """
         self.status = SquadStatus.RUNNING
+        self.error = ""
+        self.ctrl.clear_error()
         self._asyncio_task = asyncio.create_task(
-            self._run(model, push_event or (lambda _: None), accept_fn)
+            self._run(model, push_event or (lambda _: None), accept_fn, director_report_fn)
         )
+
+    async def continue_run(self, model: ModelConfig, message: str = "", push_event: Callable[[dict], None] | None = None,
+                           accept_fn: Callable[[str, str], "asyncio.Future"] | None = None,
+                           director_report_fn: Callable[[dict], "asyncio.Future"] | None = None):
+        if self.status == SquadStatus.RUNNING:
+            return
+        if message:
+            self.task = f"{self.task}\n\n[用户要求继续] {message}"
+        await self.start(model, push_event, accept_fn, director_report_fn)
 
     def stop(self):
         """请求停止（发信号给 SessionController）。"""
@@ -215,7 +228,7 @@ class Squad:
     # ── 内部编排 ────────────────────────────────────────────────
 
     async def _run(self, model: ModelConfig, push_event: Callable[[dict], None],
-                   accept_fn: Callable | None = None):
+                   accept_fn: Callable | None = None, director_report_fn: Callable | None = None):
         import traceback
 
         if self._log_path:
@@ -227,6 +240,7 @@ class Squad:
         # 立即推送启动确认，让用户知道 Squad 已开始工作
         push_event({"type": "session_line", "squad": self.name, "line": f"🚀 Squad [{self.name}] 已启动"})
         push_event({"type": "session_line", "squad": self.name, "line": f"📋 任务：{self.task[:120]}"})
+        push_event({"type": "session_progress", "squad": self.name, "percent": max(self.progress, 1), "status": "Worker 启动中"})
 
         # 读取蓝图
         blueprint_path = os.path.join(self._mentor_dir, "blueprint.md")
@@ -304,6 +318,21 @@ class Squad:
         display.init_progress_bar(task_desc=f"{self.name} 任务进度")
 
         try:
+            monitor_task = None
+            if director_report_fn:
+                async def _monitor():
+                    while self.status == SquadStatus.RUNNING and not self.ctrl.is_stopped:
+                        await asyncio.sleep(20)
+                        if self.status != SquadStatus.RUNNING or self.ctrl.is_stopped:
+                            break
+                        try:
+                            report = await director_report_fn(self.to_dict())
+                            if report:
+                                push_event({"type": "director_report", "squad": self.name, "report": report})
+                                push_event({"type": "session_line", "squad": self.name, "line": f"📡 Director 监控：{report[:180]}"})
+                        except Exception as e:
+                            push_event({"type": "session_line", "squad": self.name, "line": f"[Director 监控错误] {e}"})
+                monitor_task = asyncio.create_task(_monitor())
             # 并发启动所有 Worker（单策略下只有一个）
             await asyncio.gather(*[w.run(self.task) for w in self.workers])
         except Exception:
@@ -313,6 +342,8 @@ class Squad:
             push_event({"type": "session_done", "squad": self.name, "status": "error", "report": self.error})
             return
         finally:
+            if 'monitor_task' in locals() and monitor_task:
+                monitor_task.cancel()
             display.stop_progress_bar()
 
         if self.ctrl.state == State.ERROR:
@@ -333,6 +364,7 @@ class Squad:
             else:
                 self.report = self._build_report(file_list)
             display.session_end()
+            push_event({"type": "director_report", "squad": self.name, "report": f"验收总结：\n{self.report}"})
             push_event({"type": "session_done", "squad": self.name, "status": "ok", "report": self.report})
 
     def _get_file_list(self) -> str:
@@ -360,6 +392,8 @@ class Squad:
         return "\n\n".join(parts)
 
     def _build_report(self, file_list: str | None = None) -> str:
-        if file_list is None:
-            file_list = self._get_file_list()
-        return f"Squad [{self.name}] 已完成任务：{self.task[:100]}\n生成文件：{file_list}"
+        files = []
+        if os.path.exists(self._worker_dir):
+            files = sorted(f for f in os.listdir(self._worker_dir) if not f.startswith("history"))[:8]
+        file_text = "、".join(files) if files else "无"
+        return f"✓ 验收完成\n- 任务：{self.task[:80]}\n- 交付物：{file_text}\n- 建议：请在本地运行产物做最终确认。"
